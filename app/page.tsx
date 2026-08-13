@@ -16,7 +16,6 @@ import {
   Database,
   Download,
   FileSpreadsheet,
-  Filter,
   Gauge,
   History,
   Layers3,
@@ -37,7 +36,7 @@ import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-type View = "monitor" | "tracking" | "analysis" | "settings";
+type View = "overview" | "monitor" | "analysis" | "settings";
 type MainStatus =
   | "NotFound"
   | "InfoReceived"
@@ -95,7 +94,7 @@ type Order = {
 const STATUS_META: Record<MainStatus, { label: string; tone: string; count: number }> = {
   NotFound: { label: "查询不到", tone: "gray", count: 7 },
   InfoReceived: { label: "收到信息", tone: "cyan", count: 18 },
-  InTransit: { label: "运输途中", tone: "blue", count: 2106 },
+  InTransit: { label: "运输途中", tone: "blue", count: 2079 },
   Expired: { label: "运输过久", tone: "amber", count: 9 },
   AvailableForPickup: { label: "等待自提", tone: "purple", count: 15 },
   OutForDelivery: { label: "派送途中", tone: "green", count: 42 },
@@ -382,9 +381,9 @@ const ORDERS: Order[] = [
 ];
 
 const NAV: { id: View; label: string; desc: string; icon: LucideIcon }[] = [
-  { id: "monitor", label: "预警监控", desc: "待关注异常", icon: Radar },
-  { id: "tracking", label: "运单追踪", desc: "17TRACK状态", icon: PackageSearch },
-  { id: "analysis", label: "时效分析", desc: "履约质量", icon: BarChart3 },
+  { id: "overview", label: "数据总览", desc: "整体履约结构", icon: Gauge },
+  { id: "monitor", label: "轨迹监控", desc: "预警与运单追踪", icon: Radar },
+  { id: "analysis", label: "渠道时效", desc: "渠道表现分析", icon: BarChart3 },
   { id: "settings", label: "数据与规则", desc: "导入和SLA", icon: Settings2 },
 ];
 
@@ -451,24 +450,61 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
   );
 }
 
+function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis: () => void }) {
+  const channels = [
+    { name: "WYT-WF5日达 Zonal", count: 1420, share: 30.2, color: "#315fd6" },
+    { name: "Luvme Express", count: 986, share: 21.0, color: "#6e86df" },
+    { name: "SpeedX Zonal", count: 652, share: 13.9, color: "#27a17d" },
+    { name: "云途专线", count: 448, share: 9.5, color: "#dda04c" },
+    { name: "USPS GA", count: 374, share: 7.9, color: "#dc6c5c" },
+    { name: "其他渠道", count: 824, share: 17.5, color: "#bdc5d2" },
+  ];
+  const statuses = Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][];
+  const daily = [188, 224, 207, 246, 281, 258, 310, 296, 338, 321, 356, 374, 348, 392];
+  return (
+    <>
+      <PageHeader eyebrow="OPERATIONS OVERVIEW" title="数据总览" description="从总体规模、渠道结构和17TRACK状态看当前物流履约盘面。" actions={<><button className="button secondary"><CalendarDays size={15} />近30天</button><button className="button primary" onClick={toMonitor}><Radar size={15} />查看112条预警</button></>} />
+      <section className="overview-kpis">
+        <article><div><span>有效监控运单</span><PackageSearch size={18} /></div><strong>4,704</strong><small><b>↑ 8.4%</b> 较上周期 · 36个渠道</small></article>
+        <article><div><span>已签收</span><PackageCheck size={18} /></div><strong>2,480</strong><small>签收率 <b>52.7%</b> · 自动归档</small></article>
+        <article><div><span>运输中</span><Truck size={18} /></div><strong>2,079</strong><small>占全部运单 <b>44.2%</b></small></article>
+        <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>112</strong><small>今日新增26 · 恢复21</small></article>
+        <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
+      </section>
+      <section className="overview-main">
+        <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
+        <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
+      </section>
+      <section className="overview-secondary">
+        <article className="panel status-overview"><div className="panel-title"><div><h2>17TRACK状态分布</h2><p>完整保留九个主状态</p></div><button onClick={toMonitor}>查看运单<ChevronRight size={13} /></button></div><div className="status-stack">{statuses.map(([key, meta]) => <div key={key} style={{ width: `${Math.max(1.2, meta.count / 47.04)}%` }} className={meta.tone} title={`${meta.label} ${meta.count}`} />)}</div><div className="status-overview-list">{statuses.map(([key, meta]) => <button key={key} onClick={toMonitor}><i className={meta.tone} /><span>{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}</div></article>
+        <article className="panel structure-card"><div className="panel-title"><div><h2>目的国家分布</h2><p>按有效监控运单</p></div></div>{[["美国 US",72.4,3406],["英国 GB",12.6,593],["加拿大 CA",5.8,273],["德国 DE",3.9,184],["其他",5.3,248]].map(([name, share, count]) => <div className="structure-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
+        <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按ERP发货仓代码</p></div></div>{[["USKY3-WINIT",67.8,3189],["XC01",13.2,621],["NF01",10.9,513],["JY01",6.4,301],["其他",1.7,80]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
+      </section>
+    </>
+  );
+}
+
 function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void; onImport: () => void; notify: (text: string) => void }) {
+  const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertKey>("all");
+  const [status, setStatus] = useState<MainStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
 
   const rows = useMemo(() => ORDERS.filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
-    return (activeAlert === "all" || order.alert === activeAlert)
+    return (mode === "all" || activeAlert === "all" || order.alert === activeAlert)
+      && (status === "all" || order.status === status)
       && (country === "全部国家" || order.country === country)
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, country, query]);
+  }), [activeAlert, country, mode, query, status]);
 
   return (
     <>
       <PageHeader
         eyebrow="LOGISTICS WATCH"
-        title="物流轨迹预警监控"
-        description="只展示需要跟进的异常包裹；状态恢复后自动移出，已签收自动归档。"
+        title="物流轨迹监控"
+        description="预警监控与运单追踪合为一页，统一查看17TRACK状态、异常规则和完整轨迹。"
         actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
       />
 
@@ -481,7 +517,13 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <button onClick={onImport}><CircleAlert size={15} /><span>数据质量</span><strong>需处理 2,550 行</strong><ChevronRight size={14} /></button>
       </div>
 
-      <section className="alert-cards" aria-label="异常类型">
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />异常预警 <b>112</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>4,704</b></button><span>同一套搜索、筛选与轨迹详情</span></div>
+
+      <section className="status-grid compact-status">
+        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}
+      </section>
+
+      {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
           <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>112</strong><em>按风险和时长排序</em></div>
         </button>
@@ -490,7 +532,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
             <span className={`alert-icon ${key}`}><AlertTriangle size={16} /></span><div><small>{item.label}</small><strong>{item.count}</strong><em>{item.hint}</em></div>
           </button>
         ))}
-      </section>
+      </section>}
 
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
@@ -499,29 +541,11 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
           <select aria-label="团队"><option>全部团队</option><option>北美客服一组</option><option>北美客服二组</option><option>欧洲客服组</option></select>
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">显示 {rows.length} 条示例 · 共 {activeAlert === "all" ? 112 : ALERT_META[activeAlert].count} 条</span>
+          <span className="result-count">显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? 112 : ALERT_META[activeAlert].count} 条` : "有效运单共 4,704 条"}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>断更规则自动排除“派送失败”和“等待自提”；未上网严格以ERP签出时间 + <code>InTransit_PickedUp</code> 判断。</span></div>
+        <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>断更自动排除“派送失败”和“等待自提”；未上网以ERP签出时间 + <code>InTransit_PickedUp</code>判断。</> : <>保留17TRACK主状态、子状态原值；点击运单查看ERP与17TRACK完整轨迹。</>}</span></div>
         <OrderTable rows={rows} onOpen={onOpen} />
         <div className="table-footer"><span>默认监控30天 · 超期未解决保留 · 已签收自动归档</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
-      </section>
-    </>
-  );
-}
-
-function Tracking({ onOpen, onImport }: { onOpen: (order: Order) => void; onImport: () => void }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<MainStatus | "all">("all");
-  const rows = ORDERS.filter((order) => (status === "all" || order.status === status) && (!query || `${order.fulfillmentNo}${order.orderNo}${order.trackingNo}`.toLowerCase().includes(query.toLowerCase())));
-  return (
-    <>
-      <PageHeader eyebrow="17TRACK STATUS" title="运单追踪" description="ERP履约数据与17TRACK主状态、子状态和完整轨迹统一查看。" actions={<><button className="button secondary" onClick={onImport}><FileSpreadsheet size={15} />导入数据</button><button className="button secondary"><Download size={15} />导出结果</button></>} />
-      <section className="status-grid">
-        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}
-      </section>
-      <section className="panel">
-        <div className="panel-toolbar roomy"><div className="search-box wide"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入运单号、订单号或履约单号精准查询" /></div><select><option>全部物流渠道</option><option>USPS Ground Advantage</option><option>云途英国专线</option></select><select><option>全部发货仓</option><option>USKY3-WINIT</option><option>XC01</option><option>JY01</option></select><button className="filter-button"><Filter size={14} />筛选</button><span className="result-count">共 4,704 个有效运单</span></div>
-        <OrderTable rows={rows} onOpen={onOpen} />
       </section>
     </>
   );
@@ -646,7 +670,7 @@ function ImportModal({ onClose, notify }: { onClose: () => void; notify: (text: 
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("monitor");
+  const [view, setView] = useState<View>("overview");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [toast, setToast] = useState("");
@@ -666,8 +690,8 @@ export default function Home() {
       <main>
         <header className="topbar"><div><strong>履约控制台</strong><ChevronRight size={13} /><span>{NAV.find((item) => item.id === view)?.label}</span></div><div><button><CalendarDays size={14} />近30天<ChevronDown size={13} /></button><button><CircleCheck size={14} />数据更新于 11:45</button></div></header>
         <div className="content">
+          {view === "overview" && <Overview toMonitor={() => setView("monitor")} toAnalysis={() => setView("analysis")} />}
           {view === "monitor" && <Monitor onOpen={setSelectedOrder} onImport={() => setShowImport(true)} notify={notify} />}
-          {view === "tracking" && <Tracking onOpen={setSelectedOrder} onImport={() => setShowImport(true)} />}
           {view === "analysis" && <Analysis />}
           {view === "settings" && <Settings onImport={() => setShowImport(true)} notify={notify} />}
         </div>
