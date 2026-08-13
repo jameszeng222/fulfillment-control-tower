@@ -51,11 +51,11 @@ type AlertKey =
   | "all"
   | "transport_timeout"
   | "stagnation"
+  | "customs_hold"
   | "no_update"
   | "not_online"
   | "delivery_failure"
-  | "returning"
-  | "second_exception";
+  | "returning";
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
@@ -88,6 +88,7 @@ type Order = {
   syncStatus: SyncStatus;
   syncAt: string;
   evidence?: string;
+  tags?: string[];
   shippedAt: string;
   elapsed: string;
   abnormalAge: string;
@@ -111,13 +112,27 @@ const STATUS_META: Record<MainStatus, { label: string; tone: string; count: numb
 };
 
 const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: number; hint: string }> = {
-  transport_timeout: { label: "运输超时", count: 26, hint: "超承诺时效 +2工作日" },
-  stagnation: { label: "物流停滞", count: 31, hint: "同地点 >3工作日" },
+  transport_timeout: { label: "运输超时", count: 24, hint: "超承诺时效 +2工作日" },
+  stagnation: { label: "物流停滞", count: 27, hint: "同地点 >3工作日" },
+  customs_hold: { label: "海关卡关", count: 9, hint: "海关节点 >3工作日" },
   no_update: { label: "物流断更", count: 18, hint: "有效轨迹 >3工作日" },
   not_online: { label: "物流未上网", count: 12, hint: "签出 >2自然日" },
-  delivery_failure: { label: "派送失败", count: 14, hint: "17TRACK主/子状态" },
+  delivery_failure: { label: "派送异常", count: 14, hint: "失败 / 等待自提" },
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
-  second_exception: { label: "二次异常", count: 3, hint: "处理后状态再次变化" },
+};
+
+const SUB_STATUS_LABELS: Record<string, string> = {
+  InfoReceived: "承运商已收到电子信息",
+  InTransit_PickedUp: "承运商已揽收",
+  InTransit_Arrival: "到达处理节点",
+  InTransit_Departure: "离开处理节点",
+  InTransit_CustomsProcessing: "海关处理中",
+  InTransit_Other: "其他运输中状态",
+  AvailableForPickup_Other: "等待收件人自提",
+  DeliveryFailure_InvalidAddress: "地址错误导致派送失败",
+  Delivered_Other: "已成功签收",
+  Exception_Returning: "包裹正在退回发件地",
+  NotFound_Other: "暂无可用物流信息",
 };
 
 const baseEvents: TrackEvent[] = [
@@ -160,7 +175,7 @@ const ORDERS: Order[] = [
     channel: "云途英国专线",
     status: "InTransit",
     subStatus: "InTransit_CustomsProcessing",
-    alert: "stagnation",
+    alert: "customs_hold",
     secondaryAlerts: ["transport_timeout"],
     severity: "high",
     monitorState: "active",
@@ -169,7 +184,7 @@ const ORDERS: Order[] = [
     evidence: "Heathrow同一海关节点连续3个工作日未离开；同时超过渠道承诺时效。",
     shippedAt: "2026-08-03 15:42",
     elapsed: "9天 20小时",
-    abnormalAge: "停滞 3天 8小时",
+    abnormalAge: "卡关 3天 8小时",
     latestTrack: "Customs clearance processing",
     latestAt: "08-09 23:11",
     sla: "7工作日",
@@ -239,10 +254,12 @@ const ORDERS: Order[] = [
     channel: "WYT-USPS GA",
     status: "AvailableForPickup",
     subStatus: "AvailableForPickup_Other",
-    monitorState: "normal",
+    alert: "delivery_failure",
+    severity: "high",
+    monitorState: "active",
     syncStatus: "success",
     syncAt: "08-13 10:13",
-    evidence: "等待自提按规则排除物流断更，保留17TRACK原始状态。",
+    evidence: "17TRACK主状态仍为AvailableForPickup；业务层归入派送异常，提示客服联系客户自提，同时排除物流断更。",
     shippedAt: "2026-08-01 23:30",
     elapsed: "11天 12小时",
     abnormalAge: "等待自提 4天 1小时",
@@ -381,12 +398,11 @@ const ORDERS: Order[] = [
     channel: "USPS Ground Advantage",
     status: "Delivered",
     subStatus: "Delivered_Other",
-    alert: "second_exception",
-    severity: "medium",
-    monitorState: "active",
+    monitorState: "archived",
     syncStatus: "success",
     syncAt: "08-13 09:22",
     evidence: "原物流断更已退款，之后原包裹恢复投递并显示Delivered。",
+    tags: ["二次异常", "已退款"],
     shippedAt: "2026-07-22 08:16",
     elapsed: "9天 6小时",
     abnormalAge: "投递恢复",
@@ -470,20 +486,20 @@ const ORDERS: Order[] = [
     country: "DE",
     carrier: "DHL eCommerce",
     channel: "云途德国专线",
-    status: "NotFound",
-    subStatus: "NotFound_Other",
+    status: "InfoReceived",
+    subStatus: "InfoReceived",
     monitorState: "normal",
     syncStatus: "failure",
     syncAt: "08-13 11:37",
-    evidence: "17TRACK最近同步失败，暂不判定为物流未上网或物流断更。",
+    evidence: "保留上一次同步成功取得的InfoReceived状态；最近同步失败，暂停未上网、断更、停滞和卡关判断。",
     dataIssue: "运输商接口同步失败",
     shippedAt: "2026-08-11 09:10",
     elapsed: "—",
     abnormalAge: "待同步恢复",
-    latestTrack: "No tracking information available",
-    latestAt: "08-13 11:37",
+    latestTrack: "Shipment information received",
+    latestAt: "08-12 09:15",
     sla: "8工作日",
-    events: [{ time: "2026-08-11 09:10", title: "仓库签出", detail: "ERP签出成功", location: "JY01", source: "ERP", state: "normal" }],
+    events: [{ time: "2026-08-11 09:10", title: "仓库签出", detail: "ERP签出成功", location: "JY01", source: "ERP", state: "normal" }, { time: "2026-08-12 09:15", title: "InfoReceived · 收到电子信息", detail: "这是最近一次同步成功取得的状态；后续同步失败不会将其覆盖为NotFound", source: "17TRACK", state: "normal" }],
   },
   {
     fulfillmentNo: "P26080800731",
@@ -523,6 +539,16 @@ const NAV: { id: View; label: string; desc: string; icon: LucideIcon }[] = [
 function StatusBadge({ status }: { status: MainStatus }) {
   const meta = STATUS_META[status];
   return <span className={`status-badge ${meta.tone}`}><i />{meta.label}</span>;
+}
+
+function TrackStatusPair({ status, subStatus }: { status: MainStatus; subStatus: string }) {
+  const subLabel = SUB_STATUS_LABELS[subStatus];
+  return (
+    <div className="track-status-pair">
+      <div><span>主状态</span><StatusBadge status={status} /><code>{status}</code></div>
+      <div><span>子状态</span><strong>{subLabel ?? "未映射 · 保留原值"}</strong><code>{subStatus}</code></div>
+    </div>
+  );
 }
 
 function AlertBadge({ alert }: { alert: Exclude<AlertKey, "all"> }) {
@@ -572,7 +598,7 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
         <tbody>
           {rows.map((order) => (
             <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
-              <td>{order.alert ? <><div className="alert-line"><AlertBadge alert={order.alert} />{order.secondaryAlerts?.length ? <span className="more-alerts">+{order.secondaryAlerts.length}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无业务预警</span>}</td>
+              <td>{order.alert ? <><div className="alert-line"><AlertBadge alert={order.alert} />{order.secondaryAlerts?.length ? <span className="more-alerts">+{order.secondaryAlerts.length}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无实时预警</span>}{order.tags?.length ? <div className="business-tags">{order.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</td>
               <td><strong>{order.fulfillmentNo}</strong><small>{order.orderNo} · {order.platform}</small></td>
               <td>
                 <a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
@@ -580,7 +606,7 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
                 </a>
                 <small>{order.carrier}</small>
               </td>
-              <td><StatusBadge status={order.status} /><code>{order.subStatus}</code></td>
+              <td><TrackStatusPair status={order.status} subStatus={order.subStatus} /></td>
               <td><strong>{order.channel}</strong><small>{order.country} · {order.warehouse}</small></td>
               <td><MonitorBadge state={order.monitorState} /><small>{order.abnormalAge} · 运输 {order.elapsed}</small></td>
               <td><strong className="track-copy">{order.latestTrack}</strong><small>{order.latestAt}</small></td>
@@ -616,7 +642,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
         <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>112</strong><small>今日新增26 · 恢复21</small></article>
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
-      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK九个主状态 + 三十个子状态，原值保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>ERP + 轨迹 + 渠道SLA计算，不覆盖物流状态</small></p><b>112条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败单独监控，不误判为物流断更</small></p><b>32条需关注</b></div></section>
+      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>七类预警独立计算，不写回或覆盖17TRACK状态</small></p><b>112条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
         <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
@@ -663,7 +689,17 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <button onClick={onImport}><CircleAlert size={15} /><span>数据质量</span><strong>需处理 2,550 行</strong><ChevronRight size={14} /></button>
       </div>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />异常预警 <b>112</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>4,704</b></button><span>同一套搜索、筛选与轨迹详情</span></div>
+      <section className="status-contract" aria-label="状态处理口径">
+        <div className="contract-title"><Layers3 size={16} /><p><strong>状态处理口径</strong><small>三类字段分别保存，同一运单可以同时存在</small></p></div>
+        <div><span>① 17TRACK主状态</span><strong>当前物流阶段</strong><code>InTransit</code></div>
+        <ChevronRight size={14} />
+        <div><span>② 17TRACK子状态</span><strong>具体节点或原因</strong><code>InTransit_Arrival</code></div>
+        <ChevronRight size={14} />
+        <div><span>③ 业务预警</span><strong>是否需要处理</strong><code>物流断更 · 运输超时</code></div>
+        <aside><ShieldCheck size={14} /><span>未知子状态保留原始代码；同步失败不改成NotFound</span></aside>
+      </section>
+
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>112</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>4,704</b></button><span>二次异常等历史业务标签仅在全部运单中查询</span></div>
 
       <section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}
@@ -680,6 +716,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         ))}
       </section>}
 
+      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入七类实时预警</small></section>}
+
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
@@ -691,7 +729,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
           <span className="result-count">显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? 112 : ALERT_META[activeAlert].count} 条` : "有效运单共 4,704 条"}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>断更自动排除“派送失败”和“等待自提”；未上网以ERP签出时间 + <code>InTransit_PickedUp</code>判断。</> : <>保留17TRACK主状态、子状态原值；点击运单查看ERP与17TRACK完整轨迹。</>}</span></div>
+        <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
         <OrderTable rows={rows} onOpen={onOpen} />
         <div className="table-footer"><span>默认监控30天 · 超期未解决保留 · 已签收自动归档</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
       </section>
@@ -782,7 +820,7 @@ function SlaRules() {
   return (
     <div className="sla-layout">
       <section className="panel sla-card"><div className="panel-title"><div><h2>渠道 × 国家承诺时效</h2><p>运输超时 = 超过承诺妥投时效2个工作日，仍未进入派送状态且轨迹正常更新</p></div><button className="button secondary">+ 新增规则</button></div><div className="sla-table"><div className="sla-head"><span>国家</span><span>物流渠道</span><span>承诺时效</span><span>缓冲</span><span>工作日历</span><span>状态</span></div>{rules.map((rule) => <div className="sla-row" key={`${rule[0]}${rule[1]}`}><strong>{rule[0]}</strong><span>{rule[1]}</span><label><input defaultValue={rule[2]} /> 工作日</label><label><input defaultValue={rule[3]} /> 工作日</label><span>{rule[4]}<ChevronDown size={13} /></span><b><i />{rule[5]}</b></div>)}</div></section>
-      <aside className="panel rule-definitions"><h2>核心状态口径</h2><div><span className="definition-icon"><PackageCheck size={16} /></span><p><strong>真实上网</strong><code>InTransit_PickedUp</code><small>InfoReceived不算上网</small></p></div><div><span className="definition-icon"><History size={16} /></span><p><strong>物流断更</strong><code>3个工作日无有效轨迹</code><small>排除派送失败和等待自提</small></p></div><div><span className="definition-icon"><Truck size={16} /></span><p><strong>派送失败</strong><code>DeliveryFailure_*</code><small>保留17TRACK主/子状态原值</small></p></div><div><span className="definition-icon"><Layers3 size={16} /></span><p><strong>二次异常</strong><code>已处理 + 原包裹恢复投递</code><small>解决方案来自TOS，不在主表重复维护</small></p></div></aside>
+      <aside className="panel rule-definitions"><h2>核心状态口径</h2><div><span className="definition-icon"><PackageCheck size={16} /></span><p><strong>真实上网</strong><code>InTransit_PickedUp</code><small>InfoReceived不算实体首扫</small></p></div><div><span className="definition-icon"><History size={16} /></span><p><strong>物流断更</strong><code>3个工作日无有效轨迹</code><small>排除派送失败和等待自提</small></p></div><div><span className="definition-icon"><Truck size={16} /></span><p><strong>派送异常</strong><code>DeliveryFailure / AvailableForPickup</code><small>原始状态分别保留，不互相改写</small></p></div><div><span className="definition-icon"><CircleAlert size={16} /></span><p><strong>海关卡关</strong><code>海关节点 &gt;3工作日</code><small>独立于普通同地点停滞</small></p></div><div><span className="definition-icon"><Layers3 size={16} /></span><p><strong>二次异常标签</strong><code>已处理 + 原包裹恢复投递</code><small>属于业务标签，不进入实时预警</small></p></div></aside>
     </div>
   );
 }
@@ -792,11 +830,11 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
     <div className="drawer-mask" onClick={onClose}>
       <aside className="drawer" onClick={(event) => event.stopPropagation()}>
         <header><div><span>物流详情</span><h2>{order.fulfillmentNo}</h2><p>{order.orderNo} · {order.trackingNo}</p></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
-        <div className="drawer-status"><span className="fact-label">17TRACK事实</span><StatusBadge status={order.status} /><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
+        <div className="drawer-status"><span className="fact-label">17TRACK事实</span><span className="drawer-main-status">主状态</span><StatusBadge status={order.status} /><code>{order.status}</code><span className="drawer-sub-status">子状态 · {SUB_STATUS_LABELS[order.subStatus] ?? "未映射"}</span><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
         <div className="drawer-body">
           <section className="drawer-summary"><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
-          <section className="layer-detail"><article className="fact-detail"><header><span><PackageSearch size={15} /></span><div><strong>物流事实</strong><small>来自17TRACK，不做覆盖或改写</small></div></header><dl><div><dt>主状态</dt><dd>{order.status}</dd></div><div><dt>子状态</dt><dd>{order.subStatus}</dd></div><div><dt>最近同步</dt><dd>{order.syncAt}</dd></div><div><dt>最新轨迹</dt><dd>{order.latestTrack}</dd></div></dl></article><article className={`judgment-detail ${order.monitorState}`}><header><span><Radar size={15} /></span><div><strong>业务监控判断</strong><small>ERP + 17TRACK + 渠道SLA规则</small></div><MonitorBadge state={order.monitorState} /></header><div className="judgment-alerts">{order.alert ? <><AlertBadge alert={order.alert} />{order.secondaryAlerts?.map((alert) => <AlertBadge key={alert} alert={alert} />)}</> : <span className="no-alert"><CheckCircle2 size={12} />未命中业务预警</span>}</div><p>{order.evidence}</p></article></section>
-          {order.syncStatus === "failure" && <div className="sync-warning"><CircleAlert size={16} /><div><strong>本单不参与物流异常判断</strong><p>17TRACK最近同步失败，系统将其归入数据健康问题，避免误判为物流未上网或断更。</p></div></div>}
+          <section className="layer-detail"><article className="fact-detail"><header><span><PackageSearch size={15} /></span><div><strong>物流事实</strong><small>来自17TRACK，代码和轨迹原样保存</small></div></header><dl><div><dt>主状态</dt><dd><b>{STATUS_META[order.status].label}</b><code>{order.status}</code></dd></div><div><dt>子状态</dt><dd><b>{SUB_STATUS_LABELS[order.subStatus] ?? "未映射，保留原值"}</b><code>{order.subStatus}</code></dd></div><div><dt>运输商原文</dt><dd><b>{order.latestTrack}</b></dd></div><div><dt>最近同步</dt><dd><b>{order.syncAt}</b><code>{order.syncStatus}</code></dd></div></dl></article><article className={`judgment-detail ${order.monitorState}`}><header><span><Radar size={15} /></span><div><strong>业务监控判断</strong><small>ERP + 17TRACK + 渠道SLA规则</small></div><MonitorBadge state={order.monitorState} /></header><div className="judgment-alerts">{order.alert ? <><AlertBadge alert={order.alert} />{order.secondaryAlerts?.map((alert) => <AlertBadge key={alert} alert={alert} />)}</> : <span className="no-alert"><CheckCircle2 size={12} />未命中实时预警</span>}</div>{order.tags?.length ? <div className="drawer-tags"><span>业务标签</span>{order.tags.map((tag) => <b key={tag}>{tag}</b>)}</div> : null}<p>{order.evidence}</p></article></section>
+          {order.syncStatus === "failure" && <div className="sync-warning"><CircleAlert size={16} /><div><strong>保留上次成功状态，暂停时间类预警</strong><p>同步失败不会把主状态改成NotFound；系统暂停未上网、断更、停滞和卡关判断，恢复同步后自动重算。</p></div></div>}
           <div className="drawer-section-title"><div><h3>完整物流轨迹</h3><span>ERP + 17TRACK</span></div><a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer">在17TRACK打开<ArrowUpRight size={13} /></a></div>
           <section className="timeline">{order.events.map((event, index) => <article key={`${event.time}-${index}`} className={event.state}><i /><time>{event.time}</time><div><span>{event.source}</span><strong>{event.title}</strong><p>{event.detail}</p>{event.location && <small><MapPin size={12} />{event.location}</small>}</div></article>)}</section>
         </div>
