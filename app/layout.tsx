@@ -2,17 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "履约雷达 · 监控预警分析",
-  description: "聚焦跨境电商履约监控、规则预警、轨迹诊断与多维时效分析。",
+  title: "履约雷达 · 17TRACK履约监控",
+  description: "以17TRACK主状态、子状态与完整物流轨迹为底座的跨境履约监控、预警和时效分析平台。",
   openGraph: {
-    title: "履约雷达 · 监控预警分析",
-    description: "跨境电商履约监控、规则预警、轨迹诊断与多维时效分析平台。",
+    title: "履约雷达 · 17TRACK履约监控",
+    description: "状态、预警、分析一体化的跨境履约监控平台。",
     images: ["https://fulfillment-control-tower.zengyun666.chatgpt.site/og.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "履约雷达 · 监控预警分析",
-    description: "跨境电商履约监控、规则预警、轨迹诊断与多维时效分析平台。",
+    title: "履约雷达 · 17TRACK履约监控",
+    description: "状态、预警、分析一体化的跨境履约监控平台。",
     images: ["https://fulfillment-control-tower.zengyun666.chatgpt.site/og.png"],
   },
 };
