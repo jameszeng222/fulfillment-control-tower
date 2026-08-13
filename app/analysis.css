@@ -1,0 +1,33 @@
+.status-grid{grid-template-columns:repeat(9,1fr)}
+.status-grid .amber{color:#d0862d}
+.status-badge.amber{background:#fff0df;color:#b86d25}
+.analysis-scope{margin-left:auto;color:#8792a3;font-size:7px}
+.channel-matrix{margin-bottom:10px;overflow:hidden}
+.channel-table-wrap{overflow:auto;border-top:1px solid var(--line)}
+.channel-table{width:100%;min-width:1160px;border-collapse:collapse}
+.channel-table th{height:37px;padding:0 10px;background:#fafbfc;color:#8792a3;text-align:left;font-size:7px;font-weight:500;white-space:nowrap}
+.channel-table td{height:56px;padding:8px 10px;border-top:1px solid #edf0f3;color:#536074;font-size:8px;white-space:nowrap}
+.channel-table tbody tr{cursor:pointer;transition:.12s}
+.channel-table tbody tr:hover,.channel-table tbody tr.selected{background:#f4f7ff}
+.channel-table tbody tr.selected{box-shadow:inset 3px 0 #4566cf}
+.channel-table td strong,.channel-table td small{display:block}
+.channel-table td strong{color:#2f3b4e;font-size:8px}
+.channel-table td small{margin-top:4px;color:#929cac;font-size:6px}
+.performance{min-width:47px;padding:4px 6px;border-radius:5px;display:inline-grid;place-items:center;font-weight:700}
+.performance.good{background:#e8f6f0;color:#1d8062}
+.performance.warn{background:#fff1df;color:#b96a24}
+.performance.bad{background:#fee9e8;color:#bd443e}
+.negative{color:#c44740!important;font-weight:700}
+.delta{padding:4px 6px;border-radius:5px;font-weight:700}
+.delta.up{background:#e8f6f0;color:#1e8565}
+.delta.down{background:#fee9e8;color:#bd443e}
+.matrix-legend{min-height:42px;padding:8px 12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:15px;color:#8490a1;font-size:7px}
+.matrix-legend span{display:flex;align-items:center;gap:5px}
+.matrix-legend i{width:7px;height:7px;border-radius:50%}
+.matrix-legend i.good{background:#2a9b76}.matrix-legend i.warn{background:#d68932}.matrix-legend i.bad{background:#cb5149}
+.matrix-legend button{margin-left:auto;height:25px;padding:0 8px;border:1px solid #dfe4ea;border-radius:6px;background:#fff;color:#617086;font-size:7px}
+.channel-rank{width:100%;border:0;border-top:1px solid #edf0f3;background:#fff;text-align:left}
+.channel-rank:hover,.channel-rank.active{background:#f5f7ff}
+.metric-card>strong em{font-weight:600}
+@media(max-width:1320px){.status-grid{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:760px){.status-grid{grid-template-columns:repeat(2,1fr)}.analysis-scope{width:100%;margin:0}.matrix-legend{flex-wrap:wrap}.matrix-legend button{margin-left:0}}

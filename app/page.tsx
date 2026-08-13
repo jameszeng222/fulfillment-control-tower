@@ -42,6 +42,7 @@ type MainStatus =
   | "NotFound"
   | "InfoReceived"
   | "InTransit"
+  | "Expired"
   | "AvailableForPickup"
   | "OutForDelivery"
   | "DeliveryFailure"
@@ -95,6 +96,7 @@ const STATUS_META: Record<MainStatus, { label: string; tone: string; count: numb
   NotFound: { label: "查询不到", tone: "gray", count: 7 },
   InfoReceived: { label: "收到信息", tone: "cyan", count: 18 },
   InTransit: { label: "运输途中", tone: "blue", count: 2106 },
+  Expired: { label: "运输过久", tone: "amber", count: 9 },
   AvailableForPickup: { label: "等待自提", tone: "purple", count: 15 },
   OutForDelivery: { label: "派送途中", tone: "green", count: 42 },
   DeliveryFailure: { label: "派送失败", tone: "red", count: 23 },
@@ -527,26 +529,47 @@ function Tracking({ onOpen, onImport }: { onOpen: (order: Order) => void; onImpo
 
 function Analysis() {
   const [days, setDays] = useState(7);
-  const rates: Record<number, string> = { 3: "54.2%", 5: "81.7%", 7: "93.7%", 10: "97.9%" };
-  const rate = rates[days] ?? `${Math.min(98.6, 68 + days * 3.7).toFixed(1)}%`;
+  const [selectedChannel, setSelectedChannel] = useState("全部渠道");
+  const [country, setCountry] = useState("全部国家");
+  const channelData = [
+    { channel: "WYT-WF5日达 Zonal", country: "US", orders: 1420, avg: 4.1, d3: 61.8, d5: 88.6, d7: 96.2, sla: 96.2, overtime: 3.8, noUpdate: 1.2, failure: 0.28, trend: 1.6 },
+    { channel: "Luvme Express", country: "US", orders: 486, avg: 4.5, d3: 55.1, d5: 84.2, d7: 94.8, sla: 94.8, overtime: 5.2, noUpdate: 2.1, failure: 0.41, trend: 0.7 },
+    { channel: "SpeedX Zonal", country: "US", orders: 352, avg: 4.8, d3: 49.7, d5: 80.4, d7: 93.4, sla: 93.4, overtime: 6.6, noUpdate: 2.8, failure: 0.85, trend: -0.3 },
+    { channel: "云途英国专线", country: "GB", orders: 148, avg: 5.7, d3: 36.5, d5: 69.6, d7: 89.6, sla: 89.6, overtime: 10.4, noUpdate: 4.1, failure: 0.68, trend: -2.1 },
+    { channel: "USPS Ground Advantage", country: "US", orders: 100, avg: 6.2, d3: 31.0, d5: 62.0, d7: 84.1, sla: 84.1, overtime: 15.9, noUpdate: 5.3, failure: 1.2, trend: -3.4 },
+  ];
+  const visibleChannels = channelData.filter((row) => country === "全部国家" || row.country === country);
+  const focus = channelData.find((row) => row.channel === selectedChannel);
+  const rate = focus
+    ? `${(days <= 3 ? focus.d3 : days <= 5 ? focus.d5 : days <= 7 ? focus.d7 : Math.min(99, focus.d7 + (days - 7) * 1.15)).toFixed(1)}%`
+    : ({ 3: "54.2%", 5: "81.7%", 7: "93.7%", 10: "97.9%" } as Record<number, string>)[days] ?? `${Math.min(98.6, 68 + days * 3.7).toFixed(1)}%`;
   const trend = [84, 87, 86, 89, 91, 90, 93, 92, 94, 93, 95, 96];
   return (
     <>
-      <PageHeader eyebrow="FULFILLMENT PERFORMANCE" title="时效分析" description="用少量核心指标回答：是否准时、问题集中在哪个渠道。" actions={<button className="button secondary"><Download size={15} />导出分析</button>} />
-      <section className="analysis-filter panel"><select><option>按物流渠道</option><option>按团队</option><option>按发货仓</option><option>按国家</option><option>按创建日期</option><option>按签出日期</option></select><select><option>全部国家</option><option>US · 美国</option><option>GB · 英国</option></select><select><option>全部发货仓</option><option>USKY3-WINIT</option><option>XC01</option></select><label><input type="number" min="1" max="30" value={days} onChange={(event) => setDays(Number(event.target.value) || 1)} /><span>天达成率</span></label><button className="button primary">应用</button></section>
+      <PageHeader eyebrow="CHANNEL PERFORMANCE" title="渠道时效分析" description="同口径横向比较不同渠道，快速定位慢、断更多或派送不稳定的渠道。" actions={<button className="button secondary"><Download size={15} />导出渠道分析</button>} />
+      <section className="analysis-filter panel">
+        <select value={selectedChannel} onChange={(event) => setSelectedChannel(event.target.value)}><option>全部渠道</option>{channelData.map((row) => <option key={row.channel}>{row.channel}</option>)}</select>
+        <select value={country} onChange={(event) => setCountry(event.target.value)}><option>全部国家</option><option value="US">US · 美国</option><option value="GB">GB · 英国</option></select>
+        <select><option>按签出日期</option><option>按创建日期</option><option>按妥投日期</option></select>
+        <label><input type="number" min="1" max="30" value={days} onChange={(event) => setDays(Number(event.target.value) || 1)} /><span>天达成率</span></label>
+        <button className="button primary">应用</button><small className="analysis-scope">当前口径：工作日 · 已妥投订单</small>
+      </section>
       <section className="metric-grid">
-        <article className="metric-card primary-metric"><div><span>{days}天达成率</span><Gauge size={18} /></div><strong>{rate}</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
-        <article className="metric-card"><div><span>平均妥投时效</span><Clock3 size={18} /></div><strong>4.6<em>天</em></strong><small>已妥投履约单 2,480</small></article>
-        <article className="metric-card"><div><span>已妥投超时率</span><Activity size={18} /></div><strong>6.3%</strong><small>较上周期下降 0.7%</small></article>
-        <article className="metric-card"><div><span>派送失败率</span><AlertTriangle size={18} /></div><strong>0.49%</strong><small>23 / 4,704 个有效运单</small></article>
+        <article className="metric-card primary-metric"><div><span>{focus?.channel ?? "整体"} · {days}天达成率</span><Gauge size={18} /></div><strong>{rate}</strong><small><b>{focus && focus.trend < 0 ? "↓" : "↑"} {Math.abs(focus?.trend ?? 1.8)}%</b> 较上周期</small></article>
+        <article className="metric-card"><div><span>平均妥投时效</span><Clock3 size={18} /></div><strong>{focus?.avg ?? 4.6}<em>天</em></strong><small>签出 → 17TRACK Delivered</small></article>
+        <article className="metric-card"><div><span>超过渠道SLA</span><Activity size={18} /></div><strong>{focus?.overtime ?? 6.3}%</strong><small>按渠道 × 国家承诺时效计算</small></article>
+        <article className="metric-card"><div><span>轨迹断更率 / 派送失败率</span><AlertTriangle size={18} /></div><strong>{focus?.noUpdate ?? 2.8}% <em>/ {focus?.failure ?? 0.49}%</em></strong><small>渠道运输与末端稳定性</small></article>
+      </section>
+      <section className="panel channel-matrix">
+        <div className="panel-title"><div><h2>渠道表现对比</h2><p>点击任一渠道查看上方指标和下方趋势；样本量低于30不参与排名</p></div><span>{visibleChannels.length}个渠道</span></div>
+        <div className="channel-table-wrap"><table className="channel-table"><thead><tr><th>物流渠道</th><th>国家</th><th>履约单量</th><th>平均妥投</th><th>3天达成</th><th>5天达成</th><th>7天达成</th><th>SLA达成</th><th>超时率</th><th>断更率</th><th>派送失败</th><th>环比</th></tr></thead><tbody>{visibleChannels.map((row) => <tr key={row.channel} className={selectedChannel === row.channel ? "selected" : ""} onClick={() => setSelectedChannel(row.channel)}><td><strong>{row.channel}</strong><small>点击下钻</small></td><td>{row.country}</td><td>{row.orders.toLocaleString()}</td><td><strong>{row.avg}天</strong></td><td>{row.d3}%</td><td>{row.d5}%</td><td>{row.d7}%</td><td><span className={`performance ${row.sla < 90 ? "bad" : row.sla < 94 ? "warn" : "good"}`}>{row.sla}%</span></td><td className={row.overtime > 10 ? "negative" : ""}>{row.overtime}%</td><td className={row.noUpdate > 4 ? "negative" : ""}>{row.noUpdate}%</td><td className={row.failure > 1 ? "negative" : ""}>{row.failure}%</td><td><span className={`delta ${row.trend < 0 ? "down" : "up"}`}>{row.trend > 0 ? "+" : ""}{row.trend}%</span></td></tr>)}</tbody></table></div>
+        <div className="matrix-legend"><span><i className="good" />SLA达成 ≥94%</span><span><i className="warn" />90%–94%</span><span><i className="bad" />低于90%</span><button onClick={() => setSelectedChannel("全部渠道")}>清除渠道下钻</button></div>
       </section>
       <section className="analysis-layout">
-        <article className="panel chart-panel"><div className="panel-title"><div><h2>{days}天达成率趋势</h2><p>最近12周 · 按签出日期</p></div><span>目标 ≥ 92%</span></div><div className="trend-chart">{trend.map((value, index) => <div key={index}><b>{value}%</b><i style={{ height: `${(value - 72) * 7}px` }} /><small>W{index + 21}</small></div>)}</div></article>
-        <article className="panel channel-panel"><div className="panel-title"><div><h2>渠道时效达成率</h2><p>仅显示样本量 ≥ 30 的渠道</p></div></div>{[
-          ["WYT-WF5日达 Zonal", 96.2, 1420], ["Luvme Express", 94.8, 486], ["SpeedX Zonal", 93.4, 352], ["云途英国专线", 89.6, 148], ["USPS GA", 84.1, 100],
-        ].map(([name, value, count]) => <div className="channel-rank" key={String(name)}><div><strong>{name}</strong><small>{count}单</small></div><span><i style={{ width: `${Number(value)}%` }} /></span><b className={Number(value) < 90 ? "bad" : ""}>{value}%</b></div>)}</article>
+        <article className="panel chart-panel"><div className="panel-title"><div><h2>{focus?.channel ?? "全部渠道"} · {days}天达成率趋势</h2><p>最近12周 · 按签出日期</p></div><span>目标 ≥ 92%</span></div><div className="trend-chart">{trend.map((value, index) => { const adjusted = Math.max(74, Math.min(99, value + (focus ? focus.sla - 93 : 0))); return <div key={index}><b>{adjusted.toFixed(0)}%</b><i style={{ height: `${(adjusted - 72) * 7}px` }} /><small>W{index + 21}</small></div>; })}</div></article>
+        <article className="panel channel-panel"><div className="panel-title"><div><h2>渠道SLA达成排名</h2><p>按渠道 × 国家规则计算</p></div></div>{channelData.map((row) => <button className={`channel-rank ${selectedChannel === row.channel ? "active" : ""}`} key={row.channel} onClick={() => setSelectedChannel(row.channel)}><div><strong>{row.channel}</strong><small>{row.orders}单 · {row.avg}天</small></div><span><i style={{ width: `${row.sla}%` }} /></span><b className={row.sla < 90 ? "bad" : ""}>{row.sla}%</b></button>)}</article>
       </section>
-      <section className="quality-row"><article className="panel"><div className="panel-title"><div><h2>超时分布</h2><p>已妥投订单 · 相对承诺时效</p></div></div><div className="segments"><span style={{ width: "42%" }}>1–2天 42%</span><span style={{ width: "27%" }}>3–4天 27%</span><span style={{ width: "18%" }}>5–6天 18%</span><span style={{ width: "13%" }}>≥7天 13%</span></div></article><article className="panel"><div className="panel-title"><div><h2>轨迹稳定性</h2><p>运输途中无有效轨迹间隔</p></div></div><div className="stability"><div><b>2.8%</b><span>2–3天无更新</span></div><div><b>1.1%</b><span>4–6天无更新</span></div><div><b>0.3%</b><span>7–10天无更新</span></div><div><b>0.08%</b><span>10天以上</span></div></div></article></section>
+      <section className="quality-row"><article className="panel"><div className="panel-title"><div><h2>超时分布</h2><p>{focus?.channel ?? "全部渠道"} · 已妥投订单</p></div></div><div className="segments"><span style={{ width: "42%" }}>1–2天 42%</span><span style={{ width: "27%" }}>3–4天 27%</span><span style={{ width: "18%" }}>5–6天 18%</span><span style={{ width: "13%" }}>≥7天 13%</span></div></article><article className="panel"><div className="panel-title"><div><h2>轨迹稳定性</h2><p>{focus?.channel ?? "全部渠道"} · 运输途中无有效轨迹间隔</p></div></div><div className="stability"><div><b>2.8%</b><span>2–3天无更新</span></div><div><b>1.1%</b><span>4–6天无更新</span></div><div><b>0.3%</b><span>7–10天无更新</span></div><div><b>0.08%</b><span>10天以上</span></div></div></article></section>
     </>
   );
 }
