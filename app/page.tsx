@@ -57,6 +57,8 @@ type AlertKey =
   | "returning"
   | "second_exception";
 type Severity = "critical" | "high" | "medium";
+type MonitorState = "active" | "recovered" | "normal" | "archived";
+type SyncStatus = "success" | "failure" | "stopped";
 
 type TrackEvent = {
   time: string;
@@ -79,8 +81,13 @@ type Order = {
   channel: string;
   status: MainStatus;
   subStatus: string;
-  alert: Exclude<AlertKey, "all">;
-  severity: Severity;
+  alert?: Exclude<AlertKey, "all">;
+  secondaryAlerts?: Exclude<AlertKey, "all">[];
+  severity?: Severity;
+  monitorState: MonitorState;
+  syncStatus: SyncStatus;
+  syncAt: string;
+  evidence?: string;
   shippedAt: string;
   elapsed: string;
   abnormalAge: string;
@@ -154,7 +161,12 @@ const ORDERS: Order[] = [
     status: "InTransit",
     subStatus: "InTransit_CustomsProcessing",
     alert: "stagnation",
+    secondaryAlerts: ["transport_timeout"],
     severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "Heathrow同一海关节点连续3个工作日未离开；同时超过渠道承诺时效。",
     shippedAt: "2026-08-03 15:42",
     elapsed: "9天 20小时",
     abnormalAge: "停滞 3天 8小时",
@@ -187,6 +199,10 @@ const ORDERS: Order[] = [
     subStatus: "InfoReceived",
     alert: "not_online",
     severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "ERP签出后4天仍无InTransit_PickedUp；Shipping Label Created不计为上网。",
     shippedAt: "2026-08-09 08:30",
     elapsed: "4天 3小时",
     abnormalAge: "等待 4天 3小时",
@@ -223,11 +239,13 @@ const ORDERS: Order[] = [
     channel: "WYT-USPS GA",
     status: "AvailableForPickup",
     subStatus: "AvailableForPickup_Other",
-    alert: "no_update",
-    severity: "medium",
+    monitorState: "normal",
+    syncStatus: "success",
+    syncAt: "08-13 10:13",
+    evidence: "等待自提按规则排除物流断更，保留17TRACK原始状态。",
     shippedAt: "2026-08-01 23:30",
     elapsed: "11天 12小时",
-    abnormalAge: "断更 4天 1小时",
+    abnormalAge: "等待自提 4天 1小时",
     latestTrack: "AVAILABLE FOR PICKUP",
     latestAt: "08-09 10:13",
     sla: "7工作日",
@@ -257,6 +275,10 @@ const ORDERS: Order[] = [
     subStatus: "DeliveryFailure_InvalidAddress",
     alert: "delivery_failure",
     severity: "critical",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "17TRACK主状态DeliveryFailure，子状态明确为InvalidAddress。",
     shippedAt: "2026-08-08 11:52",
     elapsed: "5天",
     abnormalAge: "失败 18小时",
@@ -289,6 +311,10 @@ const ORDERS: Order[] = [
     subStatus: "Exception_Returning",
     alert: "returning",
     severity: "critical",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "17TRACK子状态Exception_Returning，包裹正退回发件地。",
     shippedAt: "2026-08-02 09:44",
     elapsed: "11天 2小时",
     abnormalAge: "退运 1天 7小时",
@@ -321,6 +347,10 @@ const ORDERS: Order[] = [
     subStatus: "InTransit_Other",
     alert: "transport_timeout",
     severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "USPS Ground Advantage承诺7工作日，已超过2个工作日且轨迹仍正常更新。",
     shippedAt: "2026-07-31 16:20",
     elapsed: "12天 19小时",
     abnormalAge: "超时 3工作日",
@@ -353,6 +383,10 @@ const ORDERS: Order[] = [
     subStatus: "Delivered_Other",
     alert: "second_exception",
     severity: "medium",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 09:22",
+    evidence: "原物流断更已退款，之后原包裹恢复投递并显示Delivered。",
     shippedAt: "2026-07-22 08:16",
     elapsed: "9天 6小时",
     abnormalAge: "投递恢复",
@@ -378,6 +412,105 @@ const ORDERS: Order[] = [
       },
     ],
   },
+  {
+    fulfillmentNo: "P26081000682",
+    orderNo: "SO-260810-682",
+    trackingNo: "1Z84A77E0394802196",
+    team: "北美客服一组",
+    platform: "PC1",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "UPS",
+    channel: "UPS Ground",
+    status: "InTransit",
+    subStatus: "InTransit_Arrival",
+    monitorState: "normal",
+    syncStatus: "success",
+    syncAt: "08-13 11:41",
+    evidence: "轨迹更新正常，运输4天，未命中任何业务预警。",
+    shippedAt: "2026-08-09 10:20",
+    elapsed: "4天 1小时",
+    abnormalAge: "—",
+    latestTrack: "Arrived at destination facility",
+    latestAt: "08-13 10:48",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-13 10:48", title: "InTransit_Arrival · 到达目的地区域", detail: "17TRACK轨迹持续正常更新", location: "Louisville, KY", source: "17TRACK", state: "normal" }],
+  },
+  {
+    fulfillmentNo: "P26080100208",
+    orderNo: "SO-260801-208",
+    trackingNo: "9400111899562710042231",
+    team: "北美客服二组",
+    platform: "PC16",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "USPS",
+    channel: "USPS Ground Advantage",
+    status: "Delivered",
+    subStatus: "Delivered_Other",
+    monitorState: "archived",
+    syncStatus: "success",
+    syncAt: "08-12 22:15",
+    evidence: "包裹已正常签收，系统自动归档，无业务预警。",
+    shippedAt: "2026-08-01 08:42",
+    elapsed: "5天 8小时",
+    abnormalAge: "已归档",
+    latestTrack: "Delivered, In/At Mailbox",
+    latestAt: "08-06 16:50",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-06 16:50", title: "Delivered_Other · 成功签收", detail: "正常妥投并自动归档", location: "Seattle, WA", source: "17TRACK", state: "success" }],
+  },
+  {
+    fulfillmentNo: "P26081100119",
+    orderNo: "SO-260811-119",
+    trackingNo: "LT260811445800",
+    team: "欧洲客服组",
+    platform: "PC8",
+    warehouse: "JY01",
+    country: "DE",
+    carrier: "DHL eCommerce",
+    channel: "云途德国专线",
+    status: "NotFound",
+    subStatus: "NotFound_Other",
+    monitorState: "normal",
+    syncStatus: "failure",
+    syncAt: "08-13 11:37",
+    evidence: "17TRACK最近同步失败，暂不判定为物流未上网或物流断更。",
+    dataIssue: "运输商接口同步失败",
+    shippedAt: "2026-08-11 09:10",
+    elapsed: "—",
+    abnormalAge: "待同步恢复",
+    latestTrack: "No tracking information available",
+    latestAt: "08-13 11:37",
+    sla: "8工作日",
+    events: [{ time: "2026-08-11 09:10", title: "仓库签出", detail: "ERP签出成功", location: "JY01", source: "ERP", state: "normal" }],
+  },
+  {
+    fulfillmentNo: "P26080800731",
+    orderNo: "SO-260808-731",
+    trackingNo: "SFX260808731US",
+    team: "北美客服一组",
+    platform: "PC1",
+    warehouse: "XC01",
+    country: "US",
+    carrier: "SpeedX",
+    channel: "SpeedX Zonal",
+    status: "InTransit",
+    subStatus: "InTransit_PickedUp",
+    alert: "not_online",
+    severity: "medium",
+    monitorState: "recovered",
+    syncStatus: "success",
+    syncAt: "08-13 08:26",
+    evidence: "曾在签出后超过2天未揽收；出现InTransit_PickedUp后于08-12 18:26自动恢复。",
+    shippedAt: "2026-08-08 09:31",
+    elapsed: "1天 17小时",
+    abnormalAge: "已恢复 17小时",
+    latestTrack: "Shipment picked up",
+    latestAt: "08-12 18:26",
+    sla: "6工作日",
+    events: [{ time: "2026-08-08 09:31", title: "仓库签出", detail: "开始计算未上网时长", location: "XC01", source: "ERP", state: "normal" }, { time: "2026-08-12 18:26", title: "InTransit_PickedUp · 已揽收", detail: "真实上网，物流未上网预警自动恢复", location: "Queens, NY", source: "17TRACK", state: "success" }],
+  },
 ];
 
 const NAV: { id: View; label: string; desc: string; icon: LucideIcon }[] = [
@@ -394,6 +527,16 @@ function StatusBadge({ status }: { status: MainStatus }) {
 
 function AlertBadge({ alert }: { alert: Exclude<AlertKey, "all"> }) {
   return <span className={`alert-badge alert-${alert}`}>{ALERT_META[alert].label}</span>;
+}
+
+function MonitorBadge({ state }: { state: MonitorState }) {
+  const meta: Record<MonitorState, string> = { active: "预警中", recovered: "已恢复", normal: "监控正常", archived: "已归档" };
+  return <span className={`monitor-badge ${state}`}><i />{meta[state]}</span>;
+}
+
+function SyncBadge({ status }: { status: SyncStatus }) {
+  const meta: Record<SyncStatus, string> = { success: "同步正常", failure: "同步失败", stopped: "停止跟踪" };
+  return <span className={`sync-badge ${status}`}><i />{meta[status]}</span>;
 }
 
 function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
@@ -415,20 +558,21 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
       <table className="data-table">
         <thead>
           <tr>
-            <th>预警类型</th>
+            <th>业务预警</th>
             <th>履约单 / 订单</th>
             <th>运单号</th>
-            <th>17TRACK状态</th>
+            <th>17TRACK主 / 子状态</th>
             <th>渠道 / 国家</th>
-            <th>异常时长</th>
+            <th>监控生命周期</th>
             <th>最新物流轨迹</th>
+            <th>数据同步</th>
             <th />
           </tr>
         </thead>
         <tbody>
           {rows.map((order) => (
-            <tr key={order.trackingNo} onClick={() => onOpen(order)}>
-              <td><AlertBadge alert={order.alert} /><small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small></td>
+            <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
+              <td>{order.alert ? <><div className="alert-line"><AlertBadge alert={order.alert} />{order.secondaryAlerts?.length ? <span className="more-alerts">+{order.secondaryAlerts.length}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无业务预警</span>}</td>
               <td><strong>{order.fulfillmentNo}</strong><small>{order.orderNo} · {order.platform}</small></td>
               <td>
                 <a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
@@ -438,14 +582,15 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
               </td>
               <td><StatusBadge status={order.status} /><code>{order.subStatus}</code></td>
               <td><strong>{order.channel}</strong><small>{order.country} · {order.warehouse}</small></td>
-              <td><strong>{order.abnormalAge}</strong><small>运输 {order.elapsed}</small></td>
+              <td><MonitorBadge state={order.monitorState} /><small>{order.abnormalAge} · 运输 {order.elapsed}</small></td>
               <td><strong className="track-copy">{order.latestTrack}</strong><small>{order.latestAt}</small></td>
+              <td><SyncBadge status={order.syncStatus} /><small>{order.syncAt}</small></td>
               <td><button className="icon-button" aria-label="查看物流详情"><ChevronRight size={17} /></button></td>
             </tr>
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && <div className="empty-state"><Search size={22} /><strong>没有匹配的异常运单</strong><span>试试调整关键词或筛选条件</span></div>}
+      {rows.length === 0 && <div className="empty-state"><Search size={22} /><strong>没有匹配的运单</strong><span>试试调整关键词或筛选条件</span></div>}
     </div>
   );
 }
@@ -471,12 +616,13 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
         <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>112</strong><small>今日新增26 · 恢复21</small></article>
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
+      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK九个主状态 + 三十个子状态，原值保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>ERP + 轨迹 + 渠道SLA计算，不覆盖物流状态</small></p><b>112条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败单独监控，不误判为物流断更</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
         <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
       </section>
       <section className="overview-secondary">
-        <article className="panel status-overview"><div className="panel-title"><div><h2>17TRACK状态分布</h2><p>完整保留九个主状态</p></div><button onClick={toMonitor}>查看运单<ChevronRight size={13} /></button></div><div className="status-stack">{statuses.map(([key, meta]) => <div key={key} style={{ width: `${Math.max(1.2, meta.count / 47.04)}%` }} className={meta.tone} title={`${meta.label} ${meta.count}`} />)}</div><div className="status-overview-list">{statuses.map(([key, meta]) => <button key={key} onClick={toMonitor}><i className={meta.tone} /><span>{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}</div></article>
+        <article className="panel status-overview"><div className="panel-title"><div><h2>17TRACK状态分布</h2><p>物流事实 · 九个主状态总数等于有效运单数</p></div><button onClick={toMonitor}>查看运单<ChevronRight size={13} /></button></div><div className="status-stack">{statuses.map(([key, meta]) => <div key={key} style={{ width: `${Math.max(1.2, meta.count / 47.04)}%` }} className={meta.tone} title={`${meta.label} ${meta.count}`} />)}</div><div className="status-overview-list">{statuses.map(([key, meta]) => <button key={key} onClick={toMonitor}><i className={meta.tone} /><span>{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}</div><div className="sync-health"><strong>数据同步健康度</strong><span><i className="success" />同步正常 4,672</span><span><i className="failure" />同步失败 23</span><span><i className="stopped" />停止跟踪 9</span></div></article>
         <article className="panel structure-card"><div className="panel-title"><div><h2>目的国家分布</h2><p>按有效监控运单</p></div></div>{[["美国 US",72.4,3406],["英国 GB",12.6,593],["加拿大 CA",5.8,273],["德国 DE",3.9,184],["其他",5.3,248]].map(([name, share, count]) => <div className="structure-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
         <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按ERP发货仓代码</p></div></div>{[["USKY3-WINIT",67.8,3189],["XC01",13.2,621],["NF01",10.9,513],["JY01",6.4,301],["其他",1.7,80]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
       </section>
@@ -493,7 +639,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
   const rows = useMemo(() => ORDERS.filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
-    return (mode === "all" || activeAlert === "all" || order.alert === activeAlert)
+    return (mode === "all" || (order.monitorState === "active" && !!order.alert && (activeAlert === "all" || order.alert === activeAlert || order.secondaryAlerts?.includes(activeAlert as Exclude<AlertKey, "all">))))
       && (status === "all" || order.status === status)
       && (country === "全部国家" || order.country === country)
       && (!query || text.includes(query.toLowerCase()));
@@ -540,6 +686,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
           <select aria-label="团队"><option>全部团队</option><option>北美客服一组</option><option>北美客服二组</option><option>欧洲客服组</option></select>
+          {mode === "all" && <select aria-label="监控生命周期"><option>全部监控状态</option><option>预警中</option><option>已恢复</option><option>监控正常</option><option>已归档</option></select>}
+          {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
           <span className="result-count">显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? 112 : ALERT_META[activeAlert].count} 条` : "有效运单共 4,704 条"}</span>
         </div>
@@ -615,10 +763,10 @@ function DataQuality({ onImport }: { onImport: () => void }) {
       <section className="panel source-card"><div className="source-head"><div className="file-mark"><FileSpreadsheet size={22} /></div><div><span>当前数据源</span><h2>履约单导入模板.xlsx</h2><p>履约单导入 · 6,948行 · 13个字段</p></div><button className="button secondary" onClick={onImport}>查看导入校验</button></div><div className="quality-score"><div><strong>63</strong><span>数据健康度</span></div><i><b style={{ width: "63%" }} /></i><p>基础字段可用，但重复数据、占位值和长运单号会直接影响异常数量。</p></div></section>
       <section className="quality-stats"><article><span className="quality-icon warn"><AlertTriangle size={17} /></span><div><strong>1,998</strong><span>完全重复行</span></div><small>导入时自动跳过</small></article><article><span className="quality-icon bad"><CircleAlert size={17} /></span><div><strong>238</strong><span>运单号为“19”</span></div><small>拒绝导入，无法监控</small></article><article><span className="quality-icon warn"><Clock3 size={17} /></span><div><strong>314</strong><span>签出时间缺失</span></div><small>排除未上网和时效计算</small></article><article><span className="quality-icon good"><ShieldCheck size={17} /></span><div><strong>704</strong><span>超15位数字运单</span></div><small>强制按文本保留精度</small></article></section>
       <section className="panel mapping-card"><div className="panel-title"><div><h2>V2主表字段</h2><p>一行一个包裹；相同履约单可以对应多个不同运单</p></div><span>12个核心字段</span></div><div className="mapping-grid"><div className="mapping-head"><span>字段</span><span>来源</span><span>规则</span></div>{[
-        ["履约单号 *", "现有字段", "业务标识"], ["订单号 *", "新增", "支持订单精准查询"], ["快递单号 *", "现有字段", "文本格式 / 去重键"], ["团队", "新增", "用于团队筛选"], ["发货仓代码 *", "仓库代码", "字段重命名"], ["目的国家ISO *", "目的国家", "US / GB / DE"], ["物流渠道 *", "当前渠道", "匹配SLA规则"], ["签出时间 *", "现有字段", "预警计算唯一起点"],
+        ["履约单号 *", "现有字段", "业务标识"], ["订单号 *", "新增", "支持订单精准查询"], ["快递单号 *", "现有字段", "文本格式 / 与运输商代码组成追踪键"], ["17TRACK运输商代码 *", "渠道映射", "与运单号组成唯一追踪键"], ["团队", "新增", "用于团队筛选"], ["发货仓代码 *", "仓库代码", "字段重命名"], ["目的国家ISO *", "目的国家", "US / GB / DE"], ["物流渠道 *", "当前渠道", "匹配SLA规则"], ["签出时间 *", "现有字段", "预警计算唯一起点"],
       ].map((item) => <div className="mapping-row" key={item[0]}><strong>{item[0]}</strong><span>{item[1]}</span><code>{item[2]}</code></div>)}</div><div className="mapping-foot"><CircleCheck size={15} /><span>17TRACK主状态、子状态、轨迹和异常类型由系统生成，不写回Excel主表。</span></div></section>
       <aside className="panel ingest-rules"><h2>导入处理规则</h2>{[
-        ["19 → 空值", "历史数据兼容；新数据禁止使用19占位"], ["运单号强制文本", "保留前导零，阻止科学计数法和精度丢失"], ["履约单号 + 运单号", "完全相同则跳过，不按履约单号单独去重"], ["缺失签出时间", "保留并标记数据不完整，不参与时间规则"], ["国家转ISO", "中文国家名在导入时标准化"],
+        ["19 → 空值", "历史数据兼容；新数据禁止使用19占位"], ["运单号强制文本", "保留前导零，阻止科学计数法和精度丢失"], ["运单号 + 运输商代码", "17TRACK唯一追踪键；同号不同运输商不直接去重"], ["缺失签出时间", "保留并标记数据不完整，不参与时间规则"], ["国家转ISO", "中文国家名在导入时标准化"],
       ].map(([title, detail]) => <div key={title}><CheckCircle2 size={15} /><p><strong>{title}</strong><span>{detail}</span></p></div>)}</aside>
     </div>
   );
@@ -644,10 +792,11 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
     <div className="drawer-mask" onClick={onClose}>
       <aside className="drawer" onClick={(event) => event.stopPropagation()}>
         <header><div><span>物流详情</span><h2>{order.fulfillmentNo}</h2><p>{order.orderNo} · {order.trackingNo}</p></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
-        <div className="drawer-status"><AlertBadge alert={order.alert} /><StatusBadge status={order.status} /><code>{order.subStatus}</code></div>
+        <div className="drawer-status"><span className="fact-label">17TRACK事实</span><StatusBadge status={order.status} /><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
         <div className="drawer-body">
           <section className="drawer-summary"><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
-          <div className="diagnosis"><AlertTriangle size={17} /><div><strong>异常判断</strong><p>{ALERT_META[order.alert].label}：{ALERT_META[order.alert].hint}。系统将持续监听后续轨迹，恢复后自动移出监控列表。</p></div></div>
+          <section className="layer-detail"><article className="fact-detail"><header><span><PackageSearch size={15} /></span><div><strong>物流事实</strong><small>来自17TRACK，不做覆盖或改写</small></div></header><dl><div><dt>主状态</dt><dd>{order.status}</dd></div><div><dt>子状态</dt><dd>{order.subStatus}</dd></div><div><dt>最近同步</dt><dd>{order.syncAt}</dd></div><div><dt>最新轨迹</dt><dd>{order.latestTrack}</dd></div></dl></article><article className={`judgment-detail ${order.monitorState}`}><header><span><Radar size={15} /></span><div><strong>业务监控判断</strong><small>ERP + 17TRACK + 渠道SLA规则</small></div><MonitorBadge state={order.monitorState} /></header><div className="judgment-alerts">{order.alert ? <><AlertBadge alert={order.alert} />{order.secondaryAlerts?.map((alert) => <AlertBadge key={alert} alert={alert} />)}</> : <span className="no-alert"><CheckCircle2 size={12} />未命中业务预警</span>}</div><p>{order.evidence}</p></article></section>
+          {order.syncStatus === "failure" && <div className="sync-warning"><CircleAlert size={16} /><div><strong>本单不参与物流异常判断</strong><p>17TRACK最近同步失败，系统将其归入数据健康问题，避免误判为物流未上网或断更。</p></div></div>}
           <div className="drawer-section-title"><div><h3>完整物流轨迹</h3><span>ERP + 17TRACK</span></div><a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer">在17TRACK打开<ArrowUpRight size={13} /></a></div>
           <section className="timeline">{order.events.map((event, index) => <article key={`${event.time}-${index}`} className={event.state}><i /><time>{event.time}</time><div><span>{event.source}</span><strong>{event.title}</strong><p>{event.detail}</p>{event.location && <small><MapPin size={12} />{event.location}</small>}</div></article>)}</section>
         </div>
@@ -663,7 +812,7 @@ function ImportModal({ onClose, notify }: { onClose: () => void; notify: (text: 
     <div className="modal-mask" onClick={onClose}>
       <section className="import-modal" onClick={(event) => event.stopPropagation()}>
         <header><div><span>履约单数据导入</span><h2>导入前先校验，不让脏数据进入预警计算</h2></div><button onClick={onClose}><X size={18} /></button></header>
-        {!validated ? <div className="import-ready"><div className="upload-zone"><FileSpreadsheet size={30} /><strong>履约单导入模板.xlsx</strong><span>已识别：履约单导入 · 6,948行 · 13列</span><button className="button primary" onClick={() => setValidated(true)}>开始校验</button></div><div className="import-hints"><div><Check size={14} /><span>按表头名称匹配，不依赖固定列顺序</span></div><div><Check size={14} /><span>长运单号以文本读取，保留完整精度</span></div><div><Check size={14} /><span>同一履约单可对应多个不同运单</span></div></div></div> : <div className="validation-result"><div className="validation-summary"><span className="success-ring"><Check size={24} /></span><div><strong>校验完成</strong><p>可安全写入的记录已与问题数据分开。</p></div></div><div className="validation-grid"><article><span>原始行数</span><strong>6,948</strong><small>100%</small></article><article className="good"><span>有效唯一运单</span><strong>4,704</strong><small>进入轨迹监控</small></article><article className="warn"><span>跳过重复</span><strong>1,998</strong><small>完全相同行</small></article><article className="bad"><span>拒绝导入</span><strong>238</strong><small>运单号缺失/为19</small></article></div><div className="validation-lines"><div><span>签出时间缺失</span><strong>314行</strong><em>导入但不参与时间类预警</em></div><div><span>超15位纯数字运单</span><strong>704行</strong><em>已强制转换为文本</em></div><div><span>历史占位值“19”</span><strong>6,003行</strong><em>已统一转换为空值</em></div></div><div className="modal-actions"><button className="button secondary" onClick={() => setValidated(false)}>返回</button><button className="button primary" onClick={() => { notify("4,704个有效运单已进入监控"); onClose(); }}>确认导入有效记录</button></div></div>}
+        {!validated ? <div className="import-ready"><div className="upload-zone"><FileSpreadsheet size={30} /><strong>履约单导入模板.xlsx</strong><span>已识别：履约单导入 · 6,948行 · 13列</span><button className="button primary" onClick={() => setValidated(true)}>开始校验</button></div><div className="import-hints"><div><Check size={14} /><span>按表头名称匹配，不依赖固定列顺序</span></div><div><Check size={14} /><span>长运单号以文本读取，保留完整精度</span></div><div><Check size={14} /><span>运单号 + 运输商代码作为17TRACK唯一追踪键</span></div></div></div> : <div className="validation-result"><div className="validation-summary"><span className="success-ring"><Check size={24} /></span><div><strong>校验完成</strong><p>可安全写入的记录已与问题数据分开。</p></div></div><div className="validation-grid"><article><span>原始行数</span><strong>6,948</strong><small>100%</small></article><article className="good"><span>有效唯一运单</span><strong>4,704</strong><small>进入轨迹监控</small></article><article className="warn"><span>跳过重复</span><strong>1,998</strong><small>完全相同行</small></article><article className="bad"><span>拒绝导入</span><strong>238</strong><small>运单号缺失/为19</small></article></div><div className="validation-lines"><div><span>签出时间缺失</span><strong>314行</strong><em>导入但不参与时间类预警</em></div><div><span>超15位纯数字运单</span><strong>704行</strong><em>已强制转换为文本</em></div><div><span>历史占位值“19”</span><strong>6,003行</strong><em>已统一转换为空值</em></div></div><div className="modal-actions"><button className="button secondary" onClick={() => setValidated(false)}>返回</button><button className="button primary" onClick={() => { notify("4,704个有效运单已进入监控"); onClose(); }}>确认导入有效记录</button></div></div>}
       </section>
     </div>
   );
