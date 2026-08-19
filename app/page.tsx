@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Archive,
   AlertTriangle,
   ArrowUpRight,
   BarChart3,
@@ -61,6 +62,18 @@ type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
 type TeamKey = "all" | "LM" | "FD" | "LM_TT";
 type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
+type LifecycleFilter = "all" | MonitorState;
+
+type BusinessRule = {
+  key: Exclude<AlertKey, "all">;
+  scope: string;
+  trigger: string;
+  trackStatus: string;
+  exclusions: string;
+  recovery: string;
+  priority: "紧急" | "高" | "中";
+  enabled: boolean;
+};
 
 type TrackEvent = {
   time: string;
@@ -133,6 +146,16 @@ const ALERT_FOCUS_STATUS: Record<AlertKey, MainStatus> = {
   delivery_failure: "DeliveryFailure",
   returning: "Exception",
 };
+
+const BUSINESS_RULES: BusinessRule[] = [
+  { key: "not_online", scope: "全部团队 · 全部渠道", trigger: "签出后 >2个自然日仍无有效揽收轨迹", trackStatus: "InfoReceived / NotFound", exclusions: "签出时间缺失、同步失败", recovery: "出现 InTransit_PickedUp 后自动恢复", priority: "高", enabled: true },
+  { key: "no_update", scope: "全部团队 · 运输中包裹", trigger: "连续 >3个工作日无新的有效轨迹", trackStatus: "InTransit", exclusions: "派送失败、等待自提、同步失败", recovery: "出现新的有效轨迹后自动恢复", priority: "高", enabled: true },
+  { key: "stagnation", scope: "LM / FD / LM_TT", trigger: "同一地点停留 >3个工作日", trackStatus: "InTransit_Arrival / Other", exclusions: "海关节点、同步失败", recovery: "地点或处理节点发生变化", priority: "中", enabled: true },
+  { key: "customs_hold", scope: "跨境渠道", trigger: "海关处理节点停留 >3个工作日", trackStatus: "InTransit_CustomsProcessing", exclusions: "已放行、等待补充资料", recovery: "清关放行或离开海关节点", priority: "高", enabled: true },
+  { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "超过承诺妥投时效 +2个工作日", trackStatus: "InTransit / Expired", exclusions: "已派送、已签收、轨迹断更", recovery: "进入派送或成功签收", priority: "高", enabled: true },
+  { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败或等待收件人自提", trackStatus: "DeliveryFailure / AvailableForPickup", exclusions: "已签收", recovery: "重新派送、签收或人工解决", priority: "紧急", enabled: true },
+  { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", enabled: true },
+];
 
 const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
   all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 112, todayNew: 26, recovered: 21 },
@@ -690,12 +713,14 @@ function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string;
   );
 }
 
-function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) => void }) {
+function OrderTable({ rows, selected, onToggle, onToggleAll, onOpen }: { rows: Order[]; selected: string[]; onToggle: (trackingNo: string) => void; onToggleAll: () => void; onOpen: (order: Order) => void }) {
+  const allSelected = rows.length > 0 && rows.every((order) => selected.includes(order.trackingNo));
   return (
     <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
+            <th className="select-cell"><input type="checkbox" aria-label="选择当前页全部运单" checked={allSelected} onChange={onToggleAll} /></th>
             <th>业务预警</th>
             <th>履约单 / 订单</th>
             <th>运单号</th>
@@ -710,6 +735,7 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
         <tbody>
           {rows.map((order) => (
             <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
+              <td className="select-cell" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择运单 ${order.trackingNo}`} checked={selected.includes(order.trackingNo)} onChange={() => onToggle(order.trackingNo)} /></td>
               <td>{order.alert ? <><div className="alert-line"><AlertBadge alert={order.alert} />{order.secondaryAlerts?.length ? <span className="more-alerts">+{order.secondaryAlerts.length}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无实时预警</span>}{order.tags?.length ? <div className="business-tags">{order.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</td>
               <td><div className="team-order-head"><strong>{order.fulfillmentNo}</strong><span>{order.team}</span></div><small>{order.orderNo} · {order.platform}</small></td>
               <td>
@@ -777,9 +803,13 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
+  const [lifecycle, setLifecycle] = useState<LifecycleFilter>("all");
   const [dateRange, setDateRange] = useState<DateRangeKey>("90d");
   const [customStart, setCustomStart] = useState("2026-08-01");
   const [customEnd, setCustomEnd] = useState("2026-08-13");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [archivedIds, setArchivedIds] = useState<string[]>([]);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
 
   const demoEnd = new Date("2026-08-13T23:59:59");
   const dateWindow = (() => {
@@ -792,16 +822,17 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     return { start, end: demoEnd };
   })();
 
-  const rows = useMemo(() => ORDERS.filter((order) => {
+  const rows = useMemo(() => ORDERS.map((order) => archivedIds.includes(order.trackingNo) ? { ...order, monitorState: "archived" as MonitorState } : order).filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
     return (team === "all" || order.team === team)
       && (mode === "all" || (order.monitorState === "active" && !!order.alert && (activeAlert === "all" || order.alert === activeAlert || order.secondaryAlerts?.includes(activeAlert as Exclude<AlertKey, "all">))))
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
+      && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, country, customEnd, customStart, dateRange, mode, query, status, subStatus, team]);
+  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, query, status, subStatus, team]);
 
   const teamStats = TEAM_META[team];
   const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
@@ -817,6 +848,24 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     setActiveAlert(nextAlert);
     setStatus("all");
     setSubStatus("all");
+  }
+
+  function toggleRow(trackingNo: string) {
+    setSelected((current) => current.includes(trackingNo) ? current.filter((item) => item !== trackingNo) : [...current, trackingNo]);
+  }
+
+  function toggleAllRows() {
+    const visibleIds = rows.map((order) => order.trackingNo);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
+    setSelected((current) => allSelected ? current.filter((id) => !visibleIds.includes(id)) : Array.from(new Set([...current, ...visibleIds])));
+  }
+
+  function confirmArchive() {
+    setArchivedIds((current) => Array.from(new Set([...current, ...selected])));
+    const count = selected.length;
+    setSelected([]);
+    setShowArchiveConfirm(false);
+    notify(`已归档${count}条业务监控记录，17TRACK状态与轨迹继续保留`);
   }
 
   return (
@@ -846,7 +895,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <div className="team-current"><span>当前范围</span><strong>{teamStats.label}</strong><small>{teamStats.description}</small></div>
       </section>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
 
       <section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
@@ -876,15 +925,17 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
-          {mode === "all" && <select aria-label="监控生命周期"><option>全部监控状态</option><option>预警中</option><option>已恢复</option><option>监控正常</option><option>已归档</option></select>}
+          {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
           <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? scopedStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
         <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
-        <OrderTable rows={rows} onOpen={onOpen} />
-        <div className="table-footer"><span>默认监控30天 · 超期未解决保留 · 已签收自动归档</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
+        {selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
+        <OrderTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />
+        <div className="table-footer"><span>业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
       </section>
+      {showArchiveConfirm && <div className="modal-mask" onMouseDown={() => setShowArchiveConfirm(false)}><section className="archive-confirm" role="dialog" aria-modal="true" aria-label="确认归档业务监控" onMouseDown={(event) => event.stopPropagation()}><span className="archive-confirm-icon"><Archive size={22} /></span><h2>归档 {selected.length} 条业务监控记录？</h2><p>归档后运单会移出“当前预警”，但不会删除或改写17TRACK主状态、子状态及完整轨迹。你仍可在“全部运单 → 已归档”中查询。</p><div><button className="button secondary" onClick={() => setShowArchiveConfirm(false)}>取消</button><button className="button primary" onClick={confirmArchive}>确认归档</button></div></section></div>}
     </>
   );
 }
@@ -937,12 +988,56 @@ function Analysis() {
 }
 
 function Settings({ onImport, notify }: { onImport: () => void; notify: (text: string) => void }) {
-  const [tab, setTab] = useState<"data" | "sla" | "statuses">("data");
+  const [tab, setTab] = useState<"business" | "data" | "sla" | "statuses">("business");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="集中维护导入质量、渠道SLA与17TRACK状态定义，监控页只保留日常操作。" actions={tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
-      <div className="settings-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button></div>
-      {tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警独立判断，17TRACK状态作为不可覆盖的物流事实保留。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("7条业务预警规则已发布，后续命中按新版本计算")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <div className="settings-tabs"><button className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}><Radar size={15} />业务预警规则</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button></div>
+      {tab === "business" ? <BusinessRules notify={notify} /> : tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
+    </>
+  );
+}
+
+function BusinessRules({ notify }: { notify: (text: string) => void }) {
+  const [rules, setRules] = useState(BUSINESS_RULES);
+  const [editing, setEditing] = useState<Exclude<AlertKey, "all"> | null>(null);
+  const rule = editing ? rules.find((item) => item.key === editing) : null;
+
+  function toggleRule(key: Exclude<AlertKey, "all">) {
+    setRules((current) => current.map((item) => item.key === key ? { ...item, enabled: !item.enabled } : item));
+  }
+
+  return (
+    <>
+      <section className="rule-layer-guide">
+        <article><span className="layer-icon fact"><PackageSearch size={15} /></span><div><strong>17TRACK物流事实</strong><p>主状态、子状态和完整轨迹原样保留，业务配置不能修改。</p></div><b>9主状态 · 30子状态</b></article>
+        <ChevronRight size={16} />
+        <article><span className="layer-icon rule"><Radar size={15} /></span><div><strong>业务预警判断</strong><p>按团队、渠道、时间阈值、排除条件和恢复条件独立计算。</p></div><b>{rules.filter((item) => item.enabled).length}条启用</b></article>
+      </section>
+      <section className="panel business-rules">
+        <div className="panel-title"><div><h2>业务预警规则</h2><p>使用标准模板配置阈值和适用范围，避免业务规则覆盖17TRACK官方状态。</p></div><button className="button secondary" onClick={() => { setEditing("no_update"); notify("已复制物流断更规则作为新规则草稿"); }}>+ 新增规则</button></div>
+        <div className="business-rule-head"><span>规则 / 优先级</span><span>适用范围</span><span>触发条件</span><span>关联17TRACK状态</span><span>恢复与排除</span><span>状态</span><span /></div>
+        {rules.map((item) => <div className="business-rule-row" key={item.key}>
+          <div><AlertBadge alert={item.key} /><small>{item.priority}优先级 · 当前命中 {ALERT_META[item.key].count} 单</small></div>
+          <strong>{item.scope}</strong>
+          <p>{item.trigger}</p>
+          <code>{item.trackStatus}</code>
+          <p><b>恢复：</b>{item.recovery}<small><b>排除：</b>{item.exclusions}</small></p>
+          <button className={`rule-switch ${item.enabled ? "enabled" : ""}`} aria-label={`${ALERT_META[item.key].label}${item.enabled ? "已启用" : "已停用"}`} aria-pressed={item.enabled} onClick={() => toggleRule(item.key)}><i />{item.enabled ? "启用" : "停用"}</button>
+          <button className="rule-edit" onClick={() => setEditing(item.key)}>配置</button>
+        </div>)}
+        <footer><ShieldCheck size={14} /><span>规则发布后只影响新的预警判断；历史命中记录保留当时的规则版本，便于追溯。</span></footer>
+      </section>
+      {rule && <div className="modal-mask" onMouseDown={() => setEditing(null)}><section className="rule-editor" role="dialog" aria-modal="true" aria-label={`配置${ALERT_META[rule.key].label}规则`} onMouseDown={(event) => event.stopPropagation()}>
+        <header><div><span>业务预警规则</span><h2>{ALERT_META[rule.key].label}</h2><p>规则代码：{rule.key} · 17TRACK事实字段只读</p></div><button onClick={() => setEditing(null)} aria-label="关闭规则配置"><X size={17} /></button></header>
+        <div className="rule-editor-body">
+          <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
+          <section><h3>触发判断</h3><div className="rule-form-grid"><label className="wide"><span>触发条件</span><input defaultValue={rule.trigger} /></label><label><span>时间口径</span><select defaultValue={rule.key === "not_online" ? "自然日" : "工作日"}><option>工作日</option><option>自然日</option></select></label><label><span>阈值</span><input type="number" defaultValue={rule.key === "not_online" || rule.key === "transport_timeout" ? 2 : 3} /></label><label><span>优先级</span><select defaultValue={rule.priority}><option>紧急</option><option>高</option><option>中</option></select></label></div></section>
+          <section className="readonly-fact"><h3>17TRACK关联条件 <small>只读映射</small></h3><div><code>{rule.trackStatus}</code><span>业务规则仅读取这些官方状态，不会写回或覆盖状态。</span></div></section>
+          <section><h3>排除与恢复</h3><div className="rule-form-grid"><label className="wide"><span>排除条件</span><input defaultValue={rule.exclusions} /></label><label className="wide"><span>自动恢复条件</span><input defaultValue={rule.recovery} /></label></div></section>
+        </div>
+        <footer><button className="button secondary" onClick={() => setEditing(null)}>取消</button><button className="button primary" onClick={() => { setEditing(null); notify(`${ALERT_META[rule.key].label}规则已保存为草稿`); }}>保存草稿</button></footer>
+      </section></div>}
     </>
   );
 }
