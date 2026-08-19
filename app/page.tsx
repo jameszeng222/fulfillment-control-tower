@@ -60,6 +60,7 @@ type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
 type TeamKey = "all" | "LM" | "FD" | "LM_TT";
+type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 
 type TrackEvent = {
   time: string;
@@ -128,6 +129,15 @@ const TEAM_META: Record<TeamKey, { label: string; description: string; monitored
   FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 39, todayNew: 10, recovered: 7 },
   LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 25, todayNew: 5, recovered: 5 },
 };
+
+const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = [
+  { key: "3d", label: "最近3天", factor: 0.102 },
+  { key: "yesterday", label: "昨天", factor: 0.032 },
+  { key: "7d", label: "近7天", factor: 0.24 },
+  { key: "30d", label: "近1个月", factor: 1 },
+  { key: "90d", label: "近3个月", factor: 2.73 },
+  { key: "custom", label: "自定义日期", factor: 1 },
+];
 
 const SUB_STATUS_GROUPS: Record<MainStatus, { code: string; label: string }[]> = {
   NotFound: [
@@ -681,6 +691,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
         <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>112</strong><small>今日新增26 · 恢复21</small></article>
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
+      <section className="overview-runline"><span className="live-dot" /><div><strong>轨迹监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描</small></div><span>今日新增预警 <b>26</b></span><span>今日恢复 <b className="positive">21</b></span><span>同步失败 <b>23</b></span></section>
       <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>七类预警独立计算，不写回或覆盖17TRACK状态</small></p><b>112条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
@@ -703,6 +714,20 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
+  const [dateRange, setDateRange] = useState<DateRangeKey>("30d");
+  const [customStart, setCustomStart] = useState("2026-08-01");
+  const [customEnd, setCustomEnd] = useState("2026-08-13");
+
+  const demoEnd = new Date("2026-08-13T23:59:59");
+  const dateWindow = (() => {
+    if (dateRange === "custom") return { start: new Date(`${customStart}T00:00:00`), end: new Date(`${customEnd}T23:59:59`) };
+    if (dateRange === "yesterday") return { start: new Date("2026-08-12T00:00:00"), end: new Date("2026-08-12T23:59:59") };
+    const days = dateRange === "3d" ? 3 : dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : 30;
+    const start = new Date(demoEnd);
+    start.setDate(start.getDate() - days + 1);
+    start.setHours(0, 0, 0, 0);
+    return { start, end: demoEnd };
+  })();
 
   const rows = useMemo(() => ORDERS.filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
@@ -711,12 +736,18 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
+      && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, country, mode, query, status, subStatus, team]);
+  }), [activeAlert, country, customEnd, customStart, dateRange, mode, query, status, subStatus, team]);
 
   const teamStats = TEAM_META[team];
-  const statusCount = (total: number) => team === "all" ? total : Math.max(0, Math.round(total * teamStats.monitored / TEAM_META.all.monitored));
-  const alertCount = (total: number) => team === "all" ? total : Math.max(0, Math.round(total * teamStats.alerts / TEAM_META.all.alerts));
+  const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
+  const dateFactor = dateRange === "custom" ? Math.min(3, customDays / 30) : DATE_RANGE_META.find((item) => item.key === dateRange)?.factor ?? 1;
+  const scale = (value: number) => Math.max(0, Math.round(value * dateFactor));
+  const scopedStats = { monitored: scale(teamStats.monitored), alerts: scale(teamStats.alerts), todayNew: scale(teamStats.todayNew), recovered: scale(teamStats.recovered) };
+  const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
+  const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
+  const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
 
   return (
     <>
@@ -727,38 +758,25 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
       />
 
+      <section className="date-filter" aria-label="签出日期筛选">
+        <div className="date-filter-title"><CalendarDays size={15} /><span><strong>签出日期</strong><small>当前：{rangeLabel}</small></span></div>
+        <div className="date-presets">{DATE_RANGE_META.map((item) => <button key={item.key} className={dateRange === item.key ? "active" : ""} onClick={() => setDateRange(item.key)}>{item.label}</button>)}</div>
+        {dateRange === "custom" && <div className="custom-date"><input type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} aria-label="开始日期" /><span>至</span><input type="date" value={customEnd} min={customStart} onChange={(event) => setCustomEnd(event.target.value)} aria-label="结束日期" /></div>}
+      </section>
+
       <section className="team-monitor" aria-label="团队监控切换">
         <div className="team-monitor-title"><span><Radar size={17} /></span><div><strong>团队监控</strong><small>一键切换后，页面内全部预警数字与运单明细同步更新</small></div></div>
         <div className="team-switcher">
           {(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => (
             <button key={key} className={team === key ? "active" : ""} aria-pressed={team === key} onClick={() => setTeam(key)}>
-              <span><i />{item.label}</span><strong>{item.alerts}</strong><small>预警 · {item.monitored.toLocaleString()}单</small>
+              <span><i />{item.label}</span><strong>{scale(item.alerts)}</strong><small>预警 · {scale(item.monitored).toLocaleString()}单</small>
             </button>
           ))}
         </div>
         <div className="team-current"><span>当前范围</span><strong>{teamStats.label}</strong><small>{teamStats.description}</small></div>
       </section>
 
-      <div className="sync-strip">
-        <div className="sync-title"><span className="live-dot" /><div><strong>{teamStats.label}监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描规则</small></div></div>
-        <div><span>监控运单</span><strong>{teamStats.monitored.toLocaleString()}</strong></div>
-        <div><span>活跃预警</span><strong>{teamStats.alerts}</strong></div>
-        <div><span>今日新增</span><strong>{teamStats.todayNew}</strong></div>
-        <div><span>今日恢复</span><strong className="positive">{teamStats.recovered}</strong></div>
-        <button onClick={onImport}><CircleAlert size={15} /><span>数据质量</span><strong>需处理 2,550 行</strong><ChevronRight size={14} /></button>
-      </div>
-
-      <section className="status-contract" aria-label="状态处理口径">
-        <div className="contract-title"><Layers3 size={16} /><p><strong>状态处理口径</strong><small>三类字段分别保存，同一运单可以同时存在</small></p></div>
-        <div><span>① 17TRACK主状态 · 9个</span><strong>当前物流阶段</strong><code>InTransit</code></div>
-        <ChevronRight size={14} />
-        <div><span>② 17TRACK子状态 · 30个</span><strong>具体节点或原因</strong><code>InTransit_Arrival</code></div>
-        <ChevronRight size={14} />
-        <div><span>③ 业务预警</span><strong>是否需要处理</strong><code>物流断更 · 运输超时</code></div>
-        <aside><ShieldCheck size={14} /><span>未知子状态保留原始代码；同步失败不改成NotFound</span></aside>
-      </section>
-
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{teamStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{teamStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · 二次异常等历史业务标签仅在全部运单中查询</span></div>
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
 
       <section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
@@ -770,17 +788,9 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         {SUB_STATUS_GROUPS[status].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => setSubStatus(item.code)}><strong>{item.label}</strong><code>{item.code}</code></button>)}
       </section>}
 
-      <details className="status-dictionary">
-        <summary><span className="dictionary-icon"><Layers3 size={15} /></span><div><strong>17TRACK状态字典</strong><small>需要时展开查看，列表默认保持简洁</small></div><b>9个主状态 · 30个子状态</b><ChevronDown size={15} /></summary>
-        <div className="dictionary-grid">
-          {(Object.entries(SUB_STATUS_GROUPS) as [MainStatus, { code: string; label: string }[]][]).map(([mainStatus, items]) => <section key={mainStatus}><header><StatusBadge status={mainStatus} /><span>{items.length}个</span></header>{items.map((item) => <div key={item.code}><strong>{item.label}</strong><code>{item.code}</code></div>)}</section>)}
-        </div>
-        <footer><ShieldCheck size={14} /><span>页面显示中文含义，同时原样保存枚举代码；遇到未来新增状态时显示“未映射状态”，不覆盖原值。</span><a href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">查看官方定义<ArrowUpRight size={12} /></a></footer>
-      </details>
-
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
-          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{teamStats.alerts}</strong><em>按风险和时长排序</em></div>
+          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{scopedStats.alerts}</strong><em>按风险和时长排序</em></div>
         </button>
         {(Object.entries(ALERT_META) as [Exclude<AlertKey, "all">, typeof ALERT_META[Exclude<AlertKey, "all">]][]).map(([key, item]) => (
           <button key={key} className={activeAlert === key ? "active" : ""} onClick={() => setActiveAlert(key)}>
@@ -799,7 +809,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           {mode === "all" && <select aria-label="监控生命周期"><option>全部监控状态</option><option>预警中</option><option>已恢复</option><option>监控正常</option><option>已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">{teamStats.label} · 显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? teamStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${teamStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? scopedStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
         <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
         <OrderTable rows={rows} onOpen={onOpen} />
@@ -857,13 +867,25 @@ function Analysis() {
 }
 
 function Settings({ onImport, notify }: { onImport: () => void; notify: (text: string) => void }) {
-  const [tab, setTab] = useState<"data" | "sla">("data");
+  const [tab, setTab] = useState<"data" | "sla" | "statuses">("data");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="只维护影响预警准确性的导入质量和渠道SLA，不增加重型流程。" actions={tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button>} />
-      <div className="settings-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button></div>
-      {tab === "data" ? <DataQuality onImport={onImport} /> : <SlaRules />}
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="集中维护导入质量、渠道SLA与17TRACK状态定义，监控页只保留日常操作。" actions={tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <div className="settings-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button></div>
+      {tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
     </>
+  );
+}
+
+function StatusDictionary() {
+  return (
+    <section className="panel status-catalog">
+      <header><div><span className="dictionary-icon"><Layers3 size={17} /></span><p><strong>17TRACK主状态与子状态</strong><small>9个主状态用于判断阶段，30个子状态用于解释具体节点或原因。</small></p></div><b>V2.4 · 9主 / 30子</b></header>
+      <div className="dictionary-grid">
+        {(Object.entries(SUB_STATUS_GROUPS) as [MainStatus, { code: string; label: string }[]][]).map(([mainStatus, items]) => <section key={mainStatus}><header><StatusBadge status={mainStatus} /><span>{items.length}个</span></header>{items.map((item) => <div key={item.code}><strong>{item.label}</strong><code>{item.code}</code></div>)}</section>)}
+      </div>
+      <footer><ShieldCheck size={14} /><span>中文名称用于页面显示，枚举代码原样保存；未来出现未映射状态时保留原值，不覆盖、不丢弃。</span></footer>
+    </section>
   );
 }
 
