@@ -139,44 +139,44 @@ const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = 
   { key: "custom", label: "自定义日期", factor: 1 },
 ];
 
-const SUB_STATUS_GROUPS: Record<MainStatus, { code: string; label: string }[]> = {
+const SUB_STATUS_GROUPS: Record<MainStatus, { code: string; label: string; count: number }[]> = {
   NotFound: [
-    { code: "NotFound_Other", label: "运输商无信息" },
-    { code: "NotFound_InvalidCode", label: "运单号无效" },
+    { code: "NotFound_Other", label: "运输商无信息", count: 6 },
+    { code: "NotFound_InvalidCode", label: "运单号无效", count: 1 },
   ],
-  InfoReceived: [{ code: "InfoReceived", label: "收到物流信息" }],
+  InfoReceived: [{ code: "InfoReceived", label: "收到物流信息", count: 18 }],
   InTransit: [
-    { code: "InTransit_PickedUp", label: "承运商已揽收" },
-    { code: "InTransit_Other", label: "其他运输中状态" },
-    { code: "InTransit_Departure", label: "已离开起运港" },
-    { code: "InTransit_Arrival", label: "已到达目的港" },
-    { code: "InTransit_CustomsProcessing", label: "海关处理中" },
-    { code: "InTransit_CustomsReleased", label: "清关已完成" },
-    { code: "InTransit_CustomsRequiringInformation", label: "清关需要补充资料" },
+    { code: "InTransit_PickedUp", label: "承运商已揽收", count: 374 },
+    { code: "InTransit_Other", label: "其他运输中状态", count: 519 },
+    { code: "InTransit_Departure", label: "已离开起运港", count: 249 },
+    { code: "InTransit_Arrival", label: "已到达目的港", count: 374 },
+    { code: "InTransit_CustomsProcessing", label: "海关处理中", count: 332 },
+    { code: "InTransit_CustomsReleased", label: "清关已完成", count: 166 },
+    { code: "InTransit_CustomsRequiringInformation", label: "清关需要补充资料", count: 65 },
   ],
-  Expired: [{ code: "Expired_Other", label: "运输时间过久" }],
-  AvailableForPickup: [{ code: "AvailableForPickup_Other", label: "等待收件人自提" }],
-  OutForDelivery: [{ code: "OutForDelivery_Other", label: "正在末端派送" }],
+  Expired: [{ code: "Expired_Other", label: "运输时间过久", count: 9 }],
+  AvailableForPickup: [{ code: "AvailableForPickup_Other", label: "等待收件人自提", count: 15 }],
+  OutForDelivery: [{ code: "OutForDelivery_Other", label: "正在末端派送", count: 42 }],
   DeliveryFailure: [
-    { code: "DeliveryFailure_Other", label: "其他派送失败" },
-    { code: "DeliveryFailure_NoBody", label: "无人签收或无法联系" },
-    { code: "DeliveryFailure_Security", label: "安全、清关或费用原因" },
-    { code: "DeliveryFailure_Rejected", label: "收件人拒收" },
-    { code: "DeliveryFailure_InvalidAddress", label: "收件地址错误" },
+    { code: "DeliveryFailure_Other", label: "其他派送失败", count: 4 },
+    { code: "DeliveryFailure_NoBody", label: "无人签收或无法联系", count: 7 },
+    { code: "DeliveryFailure_Security", label: "安全、清关或费用原因", count: 2 },
+    { code: "DeliveryFailure_Rejected", label: "收件人拒收", count: 3 },
+    { code: "DeliveryFailure_InvalidAddress", label: "收件地址错误", count: 7 },
   ],
-  Delivered: [{ code: "Delivered_Other", label: "已成功签收" }],
+  Delivered: [{ code: "Delivered_Other", label: "已成功签收", count: 2480 }],
   Exception: [
-    { code: "Exception_Other", label: "其他物流异常" },
-    { code: "Exception_Returning", label: "包裹退件中" },
-    { code: "Exception_Returned", label: "退件已签收" },
-    { code: "Exception_NoBody", label: "收件人信息异常" },
-    { code: "Exception_Security", label: "安全、清关或费用异常" },
-    { code: "Exception_Damage", label: "包裹损坏" },
-    { code: "Exception_Rejected", label: "收件人拒收" },
-    { code: "Exception_Delayed", label: "运输延误" },
-    { code: "Exception_Lost", label: "包裹丢失" },
-    { code: "Exception_Destroyed", label: "包裹已销毁" },
-    { code: "Exception_Cancel", label: "物流订单取消" },
+    { code: "Exception_Other", label: "其他物流异常", count: 4 },
+    { code: "Exception_Returning", label: "包裹退件中", count: 7 },
+    { code: "Exception_Returned", label: "退件已签收", count: 2 },
+    { code: "Exception_NoBody", label: "收件人信息异常", count: 2 },
+    { code: "Exception_Security", label: "安全、清关或费用异常", count: 3 },
+    { code: "Exception_Damage", label: "包裹损坏", count: 2 },
+    { code: "Exception_Rejected", label: "收件人拒收", count: 2 },
+    { code: "Exception_Delayed", label: "运输延误", count: 4 },
+    { code: "Exception_Lost", label: "包裹丢失", count: 2 },
+    { code: "Exception_Destroyed", label: "包裹已销毁", count: 1 },
+    { code: "Exception_Cancel", label: "物流订单取消", count: 2 },
   ],
 };
 
@@ -714,7 +714,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
-  const [dateRange, setDateRange] = useState<DateRangeKey>("30d");
+  const [dateRange, setDateRange] = useState<DateRangeKey>("90d");
   const [customStart, setCustomStart] = useState("2026-08-01");
   const [customEnd, setCustomEnd] = useState("2026-08-13");
 
@@ -748,6 +748,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
+  const expandedStatus: MainStatus = status === "all" ? "InTransit" : status;
 
   return (
     <>
@@ -782,11 +783,11 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
 
-      {status !== "all" && <section className="substatus-filter" aria-label={`${STATUS_META[status].label}子状态筛选`}>
-        <div><span>子状态筛选</span><strong>{STATUS_META[status].label}</strong><small>{SUB_STATUS_GROUPS[status].length}个官方子状态</small></div>
+      <section className="substatus-filter" aria-label={`${STATUS_META[expandedStatus].label}子状态筛选`}>
+        <div><span>子状态筛选 · 默认展开</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个官方子状态</small></div>
         <button className={subStatus === "all" ? "active" : ""} onClick={() => setSubStatus("all")}><strong>全部</strong><small>不限制子状态</small></button>
-        {SUB_STATUS_GROUPS[status].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => setSubStatus(item.code)}><strong>{item.label}</strong><code>{item.code}</code></button>)}
-      </section>}
+        {SUB_STATUS_GROUPS[expandedStatus].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => { setStatus(expandedStatus); setSubStatus(item.code); }}><span><strong>{item.label}</strong><b>{statusCount(item.count).toLocaleString()}</b></span><code>{item.code}</code></button>)}
+      </section>
 
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
@@ -882,7 +883,7 @@ function StatusDictionary() {
     <section className="panel status-catalog">
       <header><div><span className="dictionary-icon"><Layers3 size={17} /></span><p><strong>17TRACK主状态与子状态</strong><small>9个主状态用于判断阶段，30个子状态用于解释具体节点或原因。</small></p></div><b>V2.4 · 9主 / 30子</b></header>
       <div className="dictionary-grid">
-        {(Object.entries(SUB_STATUS_GROUPS) as [MainStatus, { code: string; label: string }[]][]).map(([mainStatus, items]) => <section key={mainStatus}><header><StatusBadge status={mainStatus} /><span>{items.length}个</span></header>{items.map((item) => <div key={item.code}><strong>{item.label}</strong><code>{item.code}</code></div>)}</section>)}
+        {(Object.entries(SUB_STATUS_GROUPS) as [MainStatus, { code: string; label: string; count: number }[]][]).map(([mainStatus, items]) => <section key={mainStatus}><header><StatusBadge status={mainStatus} /><span>{items.length}个</span></header>{items.map((item) => <div key={item.code}><strong>{item.label}</strong><code>{item.code}</code></div>)}</section>)}
       </div>
       <footer><ShieldCheck size={14} /><span>中文名称用于页面显示，枚举代码原样保存；未来出现未映射状态时保留原值，不覆盖、不丢弃。</span></footer>
     </section>
