@@ -59,6 +59,7 @@ type AlertKey =
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
+type TeamKey = "all" | "LM" | "FD" | "LM_TT";
 
 type TrackEvent = {
   time: string;
@@ -73,7 +74,7 @@ type Order = {
   fulfillmentNo: string;
   orderNo: string;
   trackingNo: string;
-  team: string;
+  team: Exclude<TeamKey, "all">;
   platform: string;
   warehouse: string;
   country: string;
@@ -119,6 +120,13 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   not_online: { label: "物流未上网", count: 12, hint: "签出 >2自然日" },
   delivery_failure: { label: "派送异常", count: 14, hint: "失败 / 等待自提" },
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
+};
+
+const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
+  all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 112, todayNew: 26, recovered: 21 },
+  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 48, todayNew: 11, recovered: 9 },
+  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 39, todayNew: 10, recovered: 7 },
+  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 25, todayNew: 5, recovered: 5 },
 };
 
 const SUB_STATUS_LABELS: Record<string, string> = {
@@ -167,7 +175,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080300176",
     orderNo: "SO-260803-176",
     trackingNo: "YT260803881729",
-    team: "欧洲客服组",
+    team: "LM",
     platform: "PC8",
     warehouse: "JY01",
     country: "GB",
@@ -204,7 +212,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080900311",
     orderNo: "SO-260809-311",
     trackingNo: "3PE260809412095",
-    team: "北美客服一组",
+    team: "FD",
     platform: "PC1",
     warehouse: "XC01",
     country: "US",
@@ -246,7 +254,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P260509004803",
     orderNo: "SO-260509-803",
     trackingNo: "9334920845500000037882",
-    team: "北美客服一组",
+    team: "FD",
     platform: "PC1",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -282,7 +290,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P260509004405",
     orderNo: "SO-260509-405",
     trackingNo: "SPXEWR079601274715",
-    team: "北美客服二组",
+    team: "LM",
     platform: "PC1",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -318,7 +326,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080500954",
     orderNo: "SO-260805-954",
     trackingNo: "GFUS01050155127361",
-    team: "北美客服二组",
+    team: "LM_TT",
     platform: "PC16",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -354,7 +362,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080100629",
     orderNo: "SO-260801-629",
     trackingNo: "42091701926129270054550001",
-    team: "北美客服一组",
+    team: "LM",
     platform: "PC1",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -390,7 +398,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26072200417",
     orderNo: "SO-260722-417",
     trackingNo: "42030301927489034710001234",
-    team: "北美客服二组",
+    team: "LM_TT",
     platform: "PC16",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -432,7 +440,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26081000682",
     orderNo: "SO-260810-682",
     trackingNo: "1Z84A77E0394802196",
-    team: "北美客服一组",
+    team: "FD",
     platform: "PC1",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -456,7 +464,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080100208",
     orderNo: "SO-260801-208",
     trackingNo: "9400111899562710042231",
-    team: "北美客服二组",
+    team: "LM_TT",
     platform: "PC16",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -480,7 +488,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26081100119",
     orderNo: "SO-260811-119",
     trackingNo: "LT260811445800",
-    team: "欧洲客服组",
+    team: "FD",
     platform: "PC8",
     warehouse: "JY01",
     country: "DE",
@@ -505,7 +513,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080800731",
     orderNo: "SO-260808-731",
     trackingNo: "SFX260808731US",
-    team: "北美客服一组",
+    team: "LM",
     platform: "PC1",
     warehouse: "XC01",
     country: "US",
@@ -599,7 +607,7 @@ function OrderTable({ rows, onOpen }: { rows: Order[]; onOpen: (order: Order) =>
           {rows.map((order) => (
             <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
               <td>{order.alert ? <><div className="alert-line"><AlertBadge alert={order.alert} />{order.secondaryAlerts?.length ? <span className="more-alerts">+{order.secondaryAlerts.length}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无实时预警</span>}{order.tags?.length ? <div className="business-tags">{order.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</td>
-              <td><strong>{order.fulfillmentNo}</strong><small>{order.orderNo} · {order.platform}</small></td>
+              <td><div className="team-order-head"><strong>{order.fulfillmentNo}</strong><span>{order.team}</span></div><small>{order.orderNo} · {order.platform}</small></td>
               <td>
                 <a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                   {order.trackingNo}<ArrowUpRight size={12} />
@@ -657,6 +665,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
 }
 
 function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void; onImport: () => void; notify: (text: string) => void }) {
+  const [team, setTeam] = useState<TeamKey>("all");
   const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertKey>("all");
   const [status, setStatus] = useState<MainStatus | "all">("all");
@@ -665,27 +674,44 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
   const rows = useMemo(() => ORDERS.filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
-    return (mode === "all" || (order.monitorState === "active" && !!order.alert && (activeAlert === "all" || order.alert === activeAlert || order.secondaryAlerts?.includes(activeAlert as Exclude<AlertKey, "all">))))
+    return (team === "all" || order.team === team)
+      && (mode === "all" || (order.monitorState === "active" && !!order.alert && (activeAlert === "all" || order.alert === activeAlert || order.secondaryAlerts?.includes(activeAlert as Exclude<AlertKey, "all">))))
       && (status === "all" || order.status === status)
       && (country === "全部国家" || order.country === country)
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, country, mode, query, status]);
+  }), [activeAlert, country, mode, query, status, team]);
+
+  const teamStats = TEAM_META[team];
+  const statusCount = (total: number) => team === "all" ? total : Math.max(0, Math.round(total * teamStats.monitored / TEAM_META.all.monitored));
+  const alertCount = (total: number) => team === "all" ? total : Math.max(0, Math.round(total * teamStats.alerts / TEAM_META.all.alerts));
 
   return (
     <>
       <PageHeader
         eyebrow="LOGISTICS WATCH"
         title="物流轨迹监控"
-        description="预警监控与运单追踪合为一页，统一查看17TRACK状态、异常规则和完整轨迹。"
+        description="按LM、FD、LM_TT团队快速切换，统一查看各团队的17TRACK状态、业务预警和完整轨迹。"
         actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
       />
 
+      <section className="team-monitor" aria-label="团队监控切换">
+        <div className="team-monitor-title"><span><Radar size={17} /></span><div><strong>团队监控</strong><small>一键切换后，页面内全部预警数字与运单明细同步更新</small></div></div>
+        <div className="team-switcher">
+          {(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => (
+            <button key={key} className={team === key ? "active" : ""} aria-pressed={team === key} onClick={() => setTeam(key)}>
+              <span><i />{item.label}</span><strong>{item.alerts}</strong><small>预警 · {item.monitored.toLocaleString()}单</small>
+            </button>
+          ))}
+        </div>
+        <div className="team-current"><span>当前范围</span><strong>{teamStats.label}</strong><small>{teamStats.description}</small></div>
+      </section>
+
       <div className="sync-strip">
-        <div className="sync-title"><span className="live-dot" /><div><strong>监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描规则</small></div></div>
-        <div><span>监控运单</span><strong>4,704</strong></div>
-        <div><span>活跃预警</span><strong>112</strong></div>
-        <div><span>今日新增</span><strong>26</strong></div>
-        <div><span>今日恢复</span><strong className="positive">21</strong></div>
+        <div className="sync-title"><span className="live-dot" /><div><strong>{teamStats.label}监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描规则</small></div></div>
+        <div><span>监控运单</span><strong>{teamStats.monitored.toLocaleString()}</strong></div>
+        <div><span>活跃预警</span><strong>{teamStats.alerts}</strong></div>
+        <div><span>今日新增</span><strong>{teamStats.todayNew}</strong></div>
+        <div><span>今日恢复</span><strong className="positive">{teamStats.recovered}</strong></div>
         <button onClick={onImport}><CircleAlert size={15} /><span>数据质量</span><strong>需处理 2,550 行</strong><ChevronRight size={14} /></button>
       </div>
 
@@ -699,19 +725,19 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <aside><ShieldCheck size={14} /><span>未知子状态保留原始代码；同步失败不改成NotFound</span></aside>
       </section>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>112</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>4,704</b></button><span>二次异常等历史业务标签仅在全部运单中查询</span></div>
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{teamStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{teamStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · 二次异常等历史业务标签仅在全部运单中查询</span></div>
 
       <section className="status-grid compact-status">
-        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}
+        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
 
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
-          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>112</strong><em>按风险和时长排序</em></div>
+          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{teamStats.alerts}</strong><em>按风险和时长排序</em></div>
         </button>
         {(Object.entries(ALERT_META) as [Exclude<AlertKey, "all">, typeof ALERT_META[Exclude<AlertKey, "all">]][]).map(([key, item]) => (
           <button key={key} className={activeAlert === key ? "active" : ""} onClick={() => setActiveAlert(key)}>
-            <span className={`alert-icon ${key}`}><AlertTriangle size={16} /></span><div><small>{item.label}</small><strong>{item.count}</strong><em>{item.hint}</em></div>
+            <span className={`alert-icon ${key}`}><AlertTriangle size={16} /></span><div><small>{item.label}</small><strong>{alertCount(item.count)}</strong><em>{item.hint}</em></div>
           </button>
         ))}
       </section>}
@@ -723,11 +749,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
-          <select aria-label="团队"><option>全部团队</option><option>北美客服一组</option><option>北美客服二组</option><option>欧洲客服组</option></select>
           {mode === "all" && <select aria-label="监控生命周期"><option>全部监控状态</option><option>预警中</option><option>已恢复</option><option>监控正常</option><option>已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? 112 : ALERT_META[activeAlert].count} 条` : "有效运单共 4,704 条"}</span>
+          <span className="result-count">{teamStats.label} · 显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? teamStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${teamStats.monitored.toLocaleString()} 条`}</span>
         </div>
         <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
         <OrderTable rows={rows} onOpen={onOpen} />
@@ -832,7 +857,7 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
         <header><div><span>物流详情</span><h2>{order.fulfillmentNo}</h2><p>{order.orderNo} · {order.trackingNo}</p></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
         <div className="drawer-status"><span className="fact-label">17TRACK事实</span><span className="drawer-main-status">主状态</span><StatusBadge status={order.status} /><code>{order.status}</code><span className="drawer-sub-status">子状态 · {SUB_STATUS_LABELS[order.subStatus] ?? "未映射"}</span><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
         <div className="drawer-body">
-          <section className="drawer-summary"><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
+          <section className="drawer-summary"><div><span>所属团队</span><strong>{order.team}</strong></div><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
           <section className="layer-detail"><article className="fact-detail"><header><span><PackageSearch size={15} /></span><div><strong>物流事实</strong><small>来自17TRACK，代码和轨迹原样保存</small></div></header><dl><div><dt>主状态</dt><dd><b>{STATUS_META[order.status].label}</b><code>{order.status}</code></dd></div><div><dt>子状态</dt><dd><b>{SUB_STATUS_LABELS[order.subStatus] ?? "未映射，保留原值"}</b><code>{order.subStatus}</code></dd></div><div><dt>运输商原文</dt><dd><b>{order.latestTrack}</b></dd></div><div><dt>最近同步</dt><dd><b>{order.syncAt}</b><code>{order.syncStatus}</code></dd></div></dl></article><article className={`judgment-detail ${order.monitorState}`}><header><span><Radar size={15} /></span><div><strong>业务监控判断</strong><small>ERP + 17TRACK + 渠道SLA规则</small></div><MonitorBadge state={order.monitorState} /></header><div className="judgment-alerts">{order.alert ? <><AlertBadge alert={order.alert} />{order.secondaryAlerts?.map((alert) => <AlertBadge key={alert} alert={alert} />)}</> : <span className="no-alert"><CheckCircle2 size={12} />未命中实时预警</span>}</div>{order.tags?.length ? <div className="drawer-tags"><span>业务标签</span>{order.tags.map((tag) => <b key={tag}>{tag}</b>)}</div> : null}<p>{order.evidence}</p></article></section>
           {order.syncStatus === "failure" && <div className="sync-warning"><CircleAlert size={16} /><div><strong>保留上次成功状态，暂停时间类预警</strong><p>同步失败不会把主状态改成NotFound；系统暂停未上网、断更、停滞和卡关判断，恢复同步后自动重算。</p></div></div>}
           <div className="drawer-section-title"><div><h3>完整物流轨迹</h3><span>ERP + 17TRACK</span></div><a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer">在17TRACK打开<ArrowUpRight size={13} /></a></div>
