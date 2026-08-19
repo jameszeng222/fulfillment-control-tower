@@ -129,19 +129,50 @@ const TEAM_META: Record<TeamKey, { label: string; description: string; monitored
   LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 25, todayNew: 5, recovered: 5 },
 };
 
-const SUB_STATUS_LABELS: Record<string, string> = {
-  InfoReceived: "承运商已收到电子信息",
-  InTransit_PickedUp: "承运商已揽收",
-  InTransit_Arrival: "到达处理节点",
-  InTransit_Departure: "离开处理节点",
-  InTransit_CustomsProcessing: "海关处理中",
-  InTransit_Other: "其他运输中状态",
-  AvailableForPickup_Other: "等待收件人自提",
-  DeliveryFailure_InvalidAddress: "地址错误导致派送失败",
-  Delivered_Other: "已成功签收",
-  Exception_Returning: "包裹正在退回发件地",
-  NotFound_Other: "暂无可用物流信息",
+const SUB_STATUS_GROUPS: Record<MainStatus, { code: string; label: string }[]> = {
+  NotFound: [
+    { code: "NotFound_Other", label: "运输商无信息" },
+    { code: "NotFound_InvalidCode", label: "运单号无效" },
+  ],
+  InfoReceived: [{ code: "InfoReceived", label: "收到物流信息" }],
+  InTransit: [
+    { code: "InTransit_PickedUp", label: "承运商已揽收" },
+    { code: "InTransit_Other", label: "其他运输中状态" },
+    { code: "InTransit_Departure", label: "已离开起运港" },
+    { code: "InTransit_Arrival", label: "已到达目的港" },
+    { code: "InTransit_CustomsProcessing", label: "海关处理中" },
+    { code: "InTransit_CustomsReleased", label: "清关已完成" },
+    { code: "InTransit_CustomsRequiringInformation", label: "清关需要补充资料" },
+  ],
+  Expired: [{ code: "Expired_Other", label: "运输时间过久" }],
+  AvailableForPickup: [{ code: "AvailableForPickup_Other", label: "等待收件人自提" }],
+  OutForDelivery: [{ code: "OutForDelivery_Other", label: "正在末端派送" }],
+  DeliveryFailure: [
+    { code: "DeliveryFailure_Other", label: "其他派送失败" },
+    { code: "DeliveryFailure_NoBody", label: "无人签收或无法联系" },
+    { code: "DeliveryFailure_Security", label: "安全、清关或费用原因" },
+    { code: "DeliveryFailure_Rejected", label: "收件人拒收" },
+    { code: "DeliveryFailure_InvalidAddress", label: "收件地址错误" },
+  ],
+  Delivered: [{ code: "Delivered_Other", label: "已成功签收" }],
+  Exception: [
+    { code: "Exception_Other", label: "其他物流异常" },
+    { code: "Exception_Returning", label: "包裹退件中" },
+    { code: "Exception_Returned", label: "退件已签收" },
+    { code: "Exception_NoBody", label: "收件人信息异常" },
+    { code: "Exception_Security", label: "安全、清关或费用异常" },
+    { code: "Exception_Damage", label: "包裹损坏" },
+    { code: "Exception_Rejected", label: "收件人拒收" },
+    { code: "Exception_Delayed", label: "运输延误" },
+    { code: "Exception_Lost", label: "包裹丢失" },
+    { code: "Exception_Destroyed", label: "包裹已销毁" },
+    { code: "Exception_Cancel", label: "物流订单取消" },
+  ],
 };
+
+const SUB_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  Object.values(SUB_STATUS_GROUPS).flat().map((item) => [item.code, item.label]),
+);
 
 const baseEvents: TrackEvent[] = [
   {
@@ -669,6 +700,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertKey>("all");
   const [status, setStatus] = useState<MainStatus | "all">("all");
+  const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
 
@@ -677,9 +709,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     return (team === "all" || order.team === team)
       && (mode === "all" || (order.monitorState === "active" && !!order.alert && (activeAlert === "all" || order.alert === activeAlert || order.secondaryAlerts?.includes(activeAlert as Exclude<AlertKey, "all">))))
       && (status === "all" || order.status === status)
+      && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, country, mode, query, status, team]);
+  }), [activeAlert, country, mode, query, status, subStatus, team]);
 
   const teamStats = TEAM_META[team];
   const statusCount = (total: number) => team === "all" ? total : Math.max(0, Math.round(total * teamStats.monitored / TEAM_META.all.monitored));
@@ -717,9 +750,9 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
       <section className="status-contract" aria-label="状态处理口径">
         <div className="contract-title"><Layers3 size={16} /><p><strong>状态处理口径</strong><small>三类字段分别保存，同一运单可以同时存在</small></p></div>
-        <div><span>① 17TRACK主状态</span><strong>当前物流阶段</strong><code>InTransit</code></div>
+        <div><span>① 17TRACK主状态 · 9个</span><strong>当前物流阶段</strong><code>InTransit</code></div>
         <ChevronRight size={14} />
-        <div><span>② 17TRACK子状态</span><strong>具体节点或原因</strong><code>InTransit_Arrival</code></div>
+        <div><span>② 17TRACK子状态 · 30个</span><strong>具体节点或原因</strong><code>InTransit_Arrival</code></div>
         <ChevronRight size={14} />
         <div><span>③ 业务预警</span><strong>是否需要处理</strong><code>物流断更 · 运输超时</code></div>
         <aside><ShieldCheck size={14} /><span>未知子状态保留原始代码；同步失败不改成NotFound</span></aside>
@@ -728,8 +761,22 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{teamStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{teamStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · 二次异常等历史业务标签仅在全部运单中查询</span></div>
 
       <section className="status-grid compact-status">
-        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => setStatus(status === key ? "all" : key)}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
+        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
+
+      {status !== "all" && <section className="substatus-filter" aria-label={`${STATUS_META[status].label}子状态筛选`}>
+        <div><span>子状态筛选</span><strong>{STATUS_META[status].label}</strong><small>{SUB_STATUS_GROUPS[status].length}个官方子状态</small></div>
+        <button className={subStatus === "all" ? "active" : ""} onClick={() => setSubStatus("all")}><strong>全部</strong><small>不限制子状态</small></button>
+        {SUB_STATUS_GROUPS[status].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => setSubStatus(item.code)}><strong>{item.label}</strong><code>{item.code}</code></button>)}
+      </section>}
+
+      <details className="status-dictionary">
+        <summary><span className="dictionary-icon"><Layers3 size={15} /></span><div><strong>17TRACK状态字典</strong><small>需要时展开查看，列表默认保持简洁</small></div><b>9个主状态 · 30个子状态</b><ChevronDown size={15} /></summary>
+        <div className="dictionary-grid">
+          {(Object.entries(SUB_STATUS_GROUPS) as [MainStatus, { code: string; label: string }[]][]).map(([mainStatus, items]) => <section key={mainStatus}><header><StatusBadge status={mainStatus} /><span>{items.length}个</span></header>{items.map((item) => <div key={item.code}><strong>{item.label}</strong><code>{item.code}</code></div>)}</section>)}
+        </div>
+        <footer><ShieldCheck size={14} /><span>页面显示中文含义，同时原样保存枚举代码；遇到未来新增状态时显示“未映射状态”，不覆盖原值。</span><a href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">查看官方定义<ArrowUpRight size={12} /></a></footer>
+      </details>
 
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
