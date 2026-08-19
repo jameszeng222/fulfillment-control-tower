@@ -56,7 +56,9 @@ type AlertKey =
   | "no_update"
   | "not_online"
   | "delivery_failure"
-  | "returning";
+  | "returning"
+  | "signout_timeout"
+  | "fulfillment_error";
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
@@ -73,6 +75,20 @@ type BusinessRule = {
   recovery: string;
   priority: "紧急" | "高" | "中";
   enabled: boolean;
+};
+
+type ErpPreTrackAlert = {
+  id: string;
+  kind: "signout_timeout" | "fulfillment_error";
+  orderNo: string;
+  fulfillmentNo?: string;
+  team: Exclude<TeamKey, "all">;
+  warehouse: string;
+  createdAt: string;
+  age: string;
+  errorCode: string;
+  reason: string;
+  severity: Severity;
 };
 
 type TrackEvent = {
@@ -134,6 +150,8 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   not_online: { label: "物流未上网", count: 12, hint: "签出 >2自然日" },
   delivery_failure: { label: "派送异常", count: 14, hint: "失败 / 等待自提" },
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
+  signout_timeout: { label: "超时未签出", count: 6, hint: "履约单生成 >24小时" },
+  fulfillment_error: { label: "履约单报错", count: 11, hint: "ERP建单 / 取号失败" },
 };
 
 const ALERT_FOCUS_STATUS: Record<AlertKey, MainStatus> = {
@@ -145,6 +163,8 @@ const ALERT_FOCUS_STATUS: Record<AlertKey, MainStatus> = {
   not_online: "InfoReceived",
   delivery_failure: "DeliveryFailure",
   returning: "Exception",
+  signout_timeout: "InfoReceived",
+  fulfillment_error: "NotFound",
 };
 
 const BUSINESS_RULES: BusinessRule[] = [
@@ -155,13 +175,23 @@ const BUSINESS_RULES: BusinessRule[] = [
   { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "超过承诺妥投时效 +2个工作日", trackStatus: "InTransit / Expired", exclusions: "已派送、已签收、轨迹断更", recovery: "进入派送或成功签收", priority: "高", enabled: true },
   { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败或等待收件人自提", trackStatus: "DeliveryFailure / AvailableForPickup", exclusions: "已签收", recovery: "重新派送、签收或人工解决", priority: "紧急", enabled: true },
   { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", enabled: true },
+  { key: "signout_timeout", scope: "全部团队 · 待签出履约单", trigger: "履约单生成后24小时仍未完成仓库签出", trackStatus: "ERP履约单状态 / 签出时间", exclusions: "已取消、人工冻结的履约单", recovery: "ERP回传签出时间后自动恢复", priority: "高", enabled: true },
+  { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", enabled: true },
+];
+
+const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
+  { id: "PRE-260812-091", kind: "signout_timeout", orderNo: "SO-260812-091", fulfillmentNo: "P26081200091", team: "LM", warehouse: "USKY3-WINIT", createdAt: "2026-08-12 08:16", age: "27小时", errorCode: "WAIT_SIGN_OUT", reason: "履约单已生成，仓库尚未完成签出", severity: "high" },
+  { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "XC01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
+  { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
+  { id: "ERR-260813-076", kind: "fulfillment_error", orderNo: "SO-260813-076", team: "LM", warehouse: "NF01", createdAt: "2026-08-13 07:51", age: "3小时54分", errorCode: "ERP_CARRIER_LABEL_FAILED", reason: "物流商取号失败，未能获取物流单号", severity: "critical" },
+  { id: "ERR-260812-633", kind: "fulfillment_error", orderNo: "SO-260812-633", team: "FD", warehouse: "JY01", createdAt: "2026-08-12 19:28", age: "16小时17分", errorCode: "ERP_CITY_INVALID", reason: "收件城市无法识别，ERP建单校验未通过", severity: "high" },
 ];
 
 const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
-  all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 112, todayNew: 26, recovered: 21 },
-  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 48, todayNew: 11, recovered: 9 },
-  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 39, todayNew: 10, recovered: 7 },
-  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 25, todayNew: 5, recovered: 5 },
+  all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 129, todayNew: 31, recovered: 21 },
+  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 55, todayNew: 13, recovered: 9 },
+  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 45, todayNew: 11, recovered: 7 },
+  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 29, todayNew: 7, recovered: 5 },
 };
 
 const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = [
@@ -759,6 +789,27 @@ function OrderTable({ rows, selected, onToggle, onToggleAll, onOpen }: { rows: O
   );
 }
 
+function ErpAlertTable({ rows, notify }: { rows: ErpPreTrackAlert[]; notify: (text: string) => void }) {
+  return (
+    <div className="table-wrap">
+      <table className="erp-alert-table">
+        <thead><tr><th>业务预警</th><th>订单号 / 履约单号</th><th>团队 / 仓库</th><th>ERP处理阶段</th><th>创建时间</th><th>已等待</th><th>ERP错误或阻塞原因</th><th /></tr></thead>
+        <tbody>{rows.map((item) => <tr key={item.id}>
+          <td><AlertBadge alert={item.kind} /><small className={`risk ${item.severity}`}>{item.severity === "critical" ? "紧急" : "高"}</small></td>
+          <td><strong>{item.orderNo}</strong><small>{item.fulfillmentNo ?? "履约单未生成"}</small></td>
+          <td><strong>{item.team}</strong><small>{item.warehouse}</small></td>
+          <td><span className="erp-stage">{item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败"}</span><code>{item.errorCode}</code></td>
+          <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : "ERP报错时间"}</small></td>
+          <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : "等待修复并重试"}</small></td>
+          <td><strong>{item.reason}</strong><small>来源：ERP错误中心</small></td>
+          <td><button className="erp-link" onClick={() => notify(`${item.orderNo}：已定位到ERP错误详情`)}>查看ERP<ArrowUpRight size={12} /></button></td>
+        </tr>)}</tbody>
+      </table>
+      {rows.length === 0 && <div className="empty-state"><Search size={22} /><strong>没有匹配的ERP预警</strong><span>试试调整团队或搜索条件</span></div>}
+    </div>
+  );
+}
+
 function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis: () => void }) {
   const channels = [
     { name: "WYT-WF5日达 Zonal", count: 1420, share: 30.2, color: "#315fd6" },
@@ -772,16 +823,16 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
   const daily = [188, 224, 207, 246, 281, 258, 310, 296, 338, 321, 356, 374, 348, 392];
   return (
     <>
-      <PageHeader eyebrow="OPERATIONS OVERVIEW" title="数据总览" description="从总体规模、渠道结构和17TRACK状态看当前物流履约盘面。" actions={<><button className="button secondary"><CalendarDays size={15} />近30天</button><button className="button primary" onClick={toMonitor}><Radar size={15} />查看112条预警</button></>} />
+      <PageHeader eyebrow="OPERATIONS OVERVIEW" title="数据总览" description="从履约准备、物流轨迹、渠道结构和17TRACK状态看当前物流履约盘面。" actions={<><button className="button secondary"><CalendarDays size={15} />近30天</button><button className="button primary" onClick={toMonitor}><Radar size={15} />查看129条预警</button></>} />
       <section className="overview-kpis">
         <article><div><span>有效监控运单</span><PackageSearch size={18} /></div><strong>4,704</strong><small><b>↑ 8.4%</b> 较上周期 · 36个渠道</small></article>
         <article><div><span>已签收</span><PackageCheck size={18} /></div><strong>2,480</strong><small>签收率 <b>52.7%</b> · 自动归档</small></article>
         <article><div><span>运输中</span><Truck size={18} /></div><strong>2,079</strong><small>占全部运单 <b>44.2%</b></small></article>
-        <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>112</strong><small>今日新增26 · 恢复21</small></article>
+        <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>129</strong><small>含ERP履约准备预警17条</small></article>
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
       <section className="overview-runline"><span className="live-dot" /><div><strong>轨迹监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描</small></div><span>今日新增预警 <b>26</b></span><span>今日恢复 <b className="positive">21</b></span><span>同步失败 <b>23</b></span></section>
-      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>七类预警独立计算，不写回或覆盖17TRACK状态</small></p><b>112条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
+      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>九类预警覆盖ERP履约准备与物流运输，不覆盖官方状态</small></p><b>129条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
         <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
@@ -810,6 +861,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [selected, setSelected] = useState<string[]>([]);
   const [archivedIds, setArchivedIds] = useState<string[]>([]);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const isPreTrackAlert = activeAlert === "signout_timeout" || activeAlert === "fulfillment_error";
 
   const demoEnd = new Date("2026-08-13T23:59:59");
   const dateWindow = (() => {
@@ -834,6 +886,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (!query || text.includes(query.toLowerCase()));
   }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, query, status, subStatus, team]);
 
+  const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => item.kind === activeAlert
+    && (team === "all" || item.team === team)
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, query, team]);
+
   const teamStats = TEAM_META[team];
   const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
   const dateFactor = dateRange === "custom" ? Math.min(3, customDays / 30) : DATE_RANGE_META.find((item) => item.key === dateRange)?.factor ?? 1;
@@ -848,6 +904,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     setActiveAlert(nextAlert);
     setStatus("all");
     setSubStatus("all");
+    setSelected([]);
   }
 
   function toggleRow(trackingNo: string) {
@@ -873,7 +930,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       <PageHeader
         eyebrow="LOGISTICS WATCH"
         title="物流轨迹监控"
-        description="按LM、FD、LM_TT团队快速切换，统一查看各团队的17TRACK状态、业务预警和完整轨迹。"
+        description="按团队统一监控ERP履约准备异常、17TRACK官方状态、业务预警和完整物流轨迹。"
         actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
       />
 
@@ -897,7 +954,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
       <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
 
-      <section className="status-grid compact-status">
+      {!isPreTrackAlert && <><section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
 
@@ -905,7 +962,9 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <div><span>{activeAlert === "all" || status !== "all" ? "子状态筛选 · 默认展开" : `${ALERT_META[activeAlert].label}自动定位`}</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个相关子状态</small></div>
         <button className={subStatus === "all" ? "active" : ""} onClick={() => setSubStatus("all")}><strong>全部</strong><small>不限制子状态</small></button>
         {SUB_STATUS_GROUPS[expandedStatus].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => { setStatus(expandedStatus); setSubStatus(item.code); }}><span><strong>{item.label}</strong><b>{statusCount(item.count).toLocaleString()}</b></span><code>{item.code}</code></button>)}
-      </section>
+      </section></>}
+
+      {isPreTrackAlert && <section className="pretrack-source-note"><span><Database size={16} /></span><div><strong>ERP履约准备预警</strong><p>发生在物流单号注册17TRACK之前，因此不关联17TRACK主状态和子状态；生成物流单号后才进入轨迹监控。</p></div><b>数据源：ERP错误中心</b></section>}
 
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
         <button className={activeAlert === "all" ? "active" : ""} onClick={() => selectAlert("all")}>
@@ -918,7 +977,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         ))}
       </section>}
 
-      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入七类实时预警</small></section>}
+      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入九类实时预警</small></section>}
 
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
@@ -928,12 +987,12 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? scopedStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? scopedStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>{mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
-        {selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
-        <OrderTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />
-        <div className="table-footer"><span>业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
+        <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
+        {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
+        {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
+        <div className="table-footer"><span>{isPreTrackAlert ? "ERP修复并重试成功后自动恢复 · 生成物流单号后进入17TRACK轨迹监控" : "业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中"}</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
       </section>
       {showArchiveConfirm && <div className="modal-mask" onMouseDown={() => setShowArchiveConfirm(false)}><section className="archive-confirm" role="dialog" aria-modal="true" aria-label="确认归档业务监控" onMouseDown={(event) => event.stopPropagation()}><span className="archive-confirm-icon"><Archive size={22} /></span><h2>归档 {selected.length} 条业务监控记录？</h2><p>归档后运单会移出“当前预警”，但不会删除或改写17TRACK主状态、子状态及完整轨迹。你仍可在“全部运单 → 已归档”中查询。</p><div><button className="button secondary" onClick={() => setShowArchiveConfirm(false)}>取消</button><button className="button primary" onClick={confirmArchive}>确认归档</button></div></section></div>}
     </>
@@ -991,7 +1050,7 @@ function Settings({ onImport, notify }: { onImport: () => void; notify: (text: s
   const [tab, setTab] = useState<"business" | "data" | "sla" | "statuses">("business");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警独立判断，17TRACK状态作为不可覆盖的物流事实保留。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("7条业务预警规则已发布，后续命中按新版本计算")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("9条业务预警规则已发布，后续命中按新版本计算")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
       <div className="settings-tabs"><button className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}><Radar size={15} />业务预警规则</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button></div>
       {tab === "business" ? <BusinessRules notify={notify} /> : tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
     </>
@@ -1002,6 +1061,7 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
   const [rules, setRules] = useState(BUSINESS_RULES);
   const [editing, setEditing] = useState<Exclude<AlertKey, "all"> | null>(null);
   const rule = editing ? rules.find((item) => item.key === editing) : null;
+  const isErpRule = rule?.key === "signout_timeout" || rule?.key === "fulfillment_error";
 
   function toggleRule(key: Exclude<AlertKey, "all">) {
     setRules((current) => current.map((item) => item.key === key ? { ...item, enabled: !item.enabled } : item));
@@ -1010,13 +1070,13 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
   return (
     <>
       <section className="rule-layer-guide">
-        <article><span className="layer-icon fact"><PackageSearch size={15} /></span><div><strong>17TRACK物流事实</strong><p>主状态、子状态和完整轨迹原样保留，业务配置不能修改。</p></div><b>9主状态 · 30子状态</b></article>
+        <article><span className="layer-icon fact"><PackageSearch size={15} /></span><div><strong>ERP + 17TRACK事实</strong><p>ERP履约状态、错误码和17TRACK物流状态原样保留，业务配置不能修改。</p></div><b>两类事实来源</b></article>
         <ChevronRight size={16} />
         <article><span className="layer-icon rule"><Radar size={15} /></span><div><strong>业务预警判断</strong><p>按团队、渠道、时间阈值、排除条件和恢复条件独立计算。</p></div><b>{rules.filter((item) => item.enabled).length}条启用</b></article>
       </section>
       <section className="panel business-rules">
         <div className="panel-title"><div><h2>业务预警规则</h2><p>使用标准模板配置阈值和适用范围，避免业务规则覆盖17TRACK官方状态。</p></div><button className="button secondary" onClick={() => { setEditing("no_update"); notify("已复制物流断更规则作为新规则草稿"); }}>+ 新增规则</button></div>
-        <div className="business-rule-head"><span>规则 / 优先级</span><span>适用范围</span><span>触发条件</span><span>关联17TRACK状态</span><span>恢复与排除</span><span>状态</span><span /></div>
+        <div className="business-rule-head"><span>规则 / 优先级</span><span>适用范围</span><span>触发条件</span><span>关联事实字段</span><span>恢复与排除</span><span>状态</span><span /></div>
         {rules.map((item) => <div className="business-rule-row" key={item.key}>
           <div><AlertBadge alert={item.key} /><small>{item.priority}优先级 · 当前命中 {ALERT_META[item.key].count} 单</small></div>
           <strong>{item.scope}</strong>
@@ -1029,11 +1089,11 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
         <footer><ShieldCheck size={14} /><span>规则发布后只影响新的预警判断；历史命中记录保留当时的规则版本，便于追溯。</span></footer>
       </section>
       {rule && <div className="modal-mask" onMouseDown={() => setEditing(null)}><section className="rule-editor" role="dialog" aria-modal="true" aria-label={`配置${ALERT_META[rule.key].label}规则`} onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><span>业务预警规则</span><h2>{ALERT_META[rule.key].label}</h2><p>规则代码：{rule.key} · 17TRACK事实字段只读</p></div><button onClick={() => setEditing(null)} aria-label="关闭规则配置"><X size={17} /></button></header>
+        <header><div><span>业务预警规则</span><h2>{ALERT_META[rule.key].label}</h2><p>规则代码：{rule.key} · {isErpRule ? "ERP" : "17TRACK"}事实字段只读</p></div><button onClick={() => setEditing(null)} aria-label="关闭规则配置"><X size={17} /></button></header>
         <div className="rule-editor-body">
           <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
           <section><h3>触发判断</h3><div className="rule-form-grid"><label className="wide"><span>触发条件</span><input defaultValue={rule.trigger} /></label><label><span>时间口径</span><select defaultValue={rule.key === "not_online" ? "自然日" : "工作日"}><option>工作日</option><option>自然日</option></select></label><label><span>阈值</span><input type="number" defaultValue={rule.key === "not_online" || rule.key === "transport_timeout" ? 2 : 3} /></label><label><span>优先级</span><select defaultValue={rule.priority}><option>紧急</option><option>高</option><option>中</option></select></label></div></section>
-          <section className="readonly-fact"><h3>17TRACK关联条件 <small>只读映射</small></h3><div><code>{rule.trackStatus}</code><span>业务规则仅读取这些官方状态，不会写回或覆盖状态。</span></div></section>
+          <section className="readonly-fact"><h3>{isErpRule ? "ERP关联字段" : "17TRACK关联条件"} <small>只读映射</small></h3><div><code>{rule.trackStatus}</code><span>业务规则仅读取来源系统事实，不会写回或覆盖状态。</span></div></section>
           <section><h3>排除与恢复</h3><div className="rule-form-grid"><label className="wide"><span>排除条件</span><input defaultValue={rule.exclusions} /></label><label className="wide"><span>自动恢复条件</span><input defaultValue={rule.recovery} /></label></div></section>
         </div>
         <footer><button className="button secondary" onClick={() => setEditing(null)}>取消</button><button className="button primary" onClick={() => { setEditing(null); notify(`${ALERT_META[rule.key].label}规则已保存为草稿`); }}>保存草稿</button></footer>
@@ -1130,7 +1190,7 @@ export default function Home() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span><Radar size={20} /></span><div><strong>履约雷达</strong><small>17TRACK CONTROL</small></div></div>
-        <nav>{NAV.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={17} /><span><strong>{item.label}</strong><small>{item.desc}</small></span>{item.id === "monitor" && <b>112</b>}</button>; })}</nav>
+        <nav>{NAV.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={17} /><span><strong>{item.label}</strong><small>{item.desc}</small></span>{item.id === "monitor" && <b>129</b>}</button>; })}</nav>
         <div className="sidebar-foot"><div><span className="live-dot" /><p><strong>数据同步正常</strong><small>17TRACK · 2分钟前</small></p></div><div className="user"><span>YZ</span><p><strong>运营管理员</strong><small>物流部 · 全部权限</small></p></div></div>
       </aside>
       <main>
