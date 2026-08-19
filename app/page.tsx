@@ -123,6 +123,17 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
 };
 
+const ALERT_FOCUS_STATUS: Record<AlertKey, MainStatus> = {
+  all: "InTransit",
+  transport_timeout: "InTransit",
+  stagnation: "InTransit",
+  customs_hold: "InTransit",
+  no_update: "InTransit",
+  not_online: "InfoReceived",
+  delivery_failure: "DeliveryFailure",
+  returning: "Exception",
+};
+
 const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
   all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 112, todayNew: 26, recovered: 21 },
   LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 48, todayNew: 11, recovered: 9 },
@@ -576,6 +587,58 @@ const ORDERS: Order[] = [
     sla: "6工作日",
     events: [{ time: "2026-08-08 09:31", title: "仓库签出", detail: "开始计算未上网时长", location: "XC01", source: "ERP", state: "normal" }, { time: "2026-08-12 18:26", title: "InTransit_PickedUp · 已揽收", detail: "真实上网，物流未上网预警自动恢复", location: "Queens, NY", source: "17TRACK", state: "success" }],
   },
+  {
+    fulfillmentNo: "P26080400518",
+    orderNo: "SO-260804-518",
+    trackingNo: "YT260804518GB",
+    team: "FD",
+    platform: "PC8",
+    warehouse: "JY01",
+    country: "GB",
+    carrier: "YunExpress",
+    channel: "云途英国专线",
+    status: "InTransit",
+    subStatus: "InTransit_Arrival",
+    alert: "stagnation",
+    severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "包裹在 Birmingham Distribution Centre 连续3个工作日未离开，同地点停留命中物流停滞规则。",
+    shippedAt: "2026-08-04 14:20",
+    elapsed: "9天 21小时",
+    abnormalAge: "停滞 3天 6小时",
+    latestTrack: "Arrived at destination sorting centre",
+    latestAt: "08-10 05:36",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-10 05:36", title: "InTransit_Arrival · 到达处理中心", detail: "连续3个工作日没有离开同一处理节点", location: "Birmingham, GB", source: "17TRACK", state: "warning" }],
+  },
+  {
+    fulfillmentNo: "P26080600244",
+    orderNo: "SO-260806-244",
+    trackingNo: "420100019260806244001",
+    team: "LM_TT",
+    platform: "PC16",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "USPS",
+    channel: "USPS Ground Advantage",
+    status: "InTransit",
+    subStatus: "InTransit_Departure",
+    alert: "no_update",
+    severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "最近一条有效轨迹距今超过3个工作日，且没有派送失败或等待自提状态，命中物流断更规则。",
+    shippedAt: "2026-08-06 10:15",
+    elapsed: "7天 1小时",
+    abnormalAge: "断更 4天 2小时",
+    latestTrack: "Departed USPS Regional Facility",
+    latestAt: "08-09 09:28",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-09 09:28", title: "InTransit_Departure · 离开区域中心", detail: "此后连续4个工作日没有新的有效物流轨迹", location: "Los Angeles, CA", source: "17TRACK", state: "warning" }],
+  },
 ];
 
 const NAV: { id: View; label: string; desc: string; icon: LucideIcon }[] = [
@@ -748,7 +811,13 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
-  const expandedStatus: MainStatus = status === "all" ? "InTransit" : status;
+  const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
+
+  function selectAlert(nextAlert: AlertKey) {
+    setActiveAlert(nextAlert);
+    setStatus("all");
+    setSubStatus("all");
+  }
 
   return (
     <>
@@ -780,21 +849,21 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => setMode("alerts")}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
 
       <section className="status-grid compact-status">
-        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={status === key ? `active ${meta.tone}` : meta.tone} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
+        {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
 
       <section className="substatus-filter" aria-label={`${STATUS_META[expandedStatus].label}子状态筛选`}>
-        <div><span>子状态筛选 · 默认展开</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个官方子状态</small></div>
+        <div><span>{activeAlert === "all" || status !== "all" ? "子状态筛选 · 默认展开" : `${ALERT_META[activeAlert].label}自动定位`}</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个相关子状态</small></div>
         <button className={subStatus === "all" ? "active" : ""} onClick={() => setSubStatus("all")}><strong>全部</strong><small>不限制子状态</small></button>
         {SUB_STATUS_GROUPS[expandedStatus].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => { setStatus(expandedStatus); setSubStatus(item.code); }}><span><strong>{item.label}</strong><b>{statusCount(item.count).toLocaleString()}</b></span><code>{item.code}</code></button>)}
       </section>
 
       {mode === "alerts" && <section className="alert-cards" aria-label="异常类型">
-        <button className={activeAlert === "all" ? "active" : ""} onClick={() => setActiveAlert("all")}>
+        <button className={activeAlert === "all" ? "active" : ""} onClick={() => selectAlert("all")}>
           <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{scopedStats.alerts}</strong><em>按风险和时长排序</em></div>
         </button>
         {(Object.entries(ALERT_META) as [Exclude<AlertKey, "all">, typeof ALERT_META[Exclude<AlertKey, "all">]][]).map(([key, item]) => (
-          <button key={key} className={activeAlert === key ? "active" : ""} onClick={() => setActiveAlert(key)}>
+          <button key={key} className={activeAlert === key ? "active" : ""} onClick={() => selectAlert(key)}>
             <span className={`alert-icon ${key}`}><AlertTriangle size={16} /></span><div><small>{item.label}</small><strong>{alertCount(item.count)}</strong><em>{item.hint}</em></div>
           </button>
         ))}
