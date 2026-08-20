@@ -65,6 +65,7 @@ type SyncStatus = "success" | "failure" | "stopped";
 type TeamKey = "all" | "LM" | "FD" | "LM_TT";
 type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 type LifecycleFilter = "all" | MonitorState;
+type PriorityFilter = "all" | Severity;
 
 type BusinessRule = {
   key: Exclude<AlertKey, "all">;
@@ -74,6 +75,9 @@ type BusinessRule = {
   exclusions: string;
   recovery: string;
   priority: "紧急" | "高" | "中";
+  keywordMode?: "辅助匹配" | "必须命中" | "不使用";
+  keywords?: string;
+  ignoredKeywords?: string;
   enabled: boolean;
 };
 
@@ -144,9 +148,9 @@ const STATUS_META: Record<MainStatus, { label: string; tone: string; count: numb
 
 const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: number; hint: string }> = {
   transport_timeout: { label: "运输超时", count: 24, hint: "超承诺时效 +2工作日" },
-  stagnation: { label: "物流停滞", count: 27, hint: "同地点 >3工作日" },
+  stagnation: { label: "物流停滞", count: 27, hint: "有轨迹 · 同地点未移动" },
   customs_hold: { label: "海关卡关", count: 9, hint: "海关节点 >3工作日" },
-  no_update: { label: "物流断更", count: 18, hint: "有效轨迹 >3工作日" },
+  no_update: { label: "物流断更", count: 18, hint: "完全无新有效轨迹" },
   not_online: { label: "物流未上网", count: 12, hint: "签出 >2自然日" },
   delivery_failure: { label: "派送异常", count: 14, hint: "失败 / 等待自提" },
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
@@ -168,15 +172,15 @@ const ALERT_FOCUS_STATUS: Record<AlertKey, MainStatus> = {
 };
 
 const BUSINESS_RULES: BusinessRule[] = [
-  { key: "not_online", scope: "全部团队 · 全部渠道", trigger: "签出后 >2个自然日仍无有效揽收轨迹", trackStatus: "InfoReceived / NotFound", exclusions: "签出时间缺失、同步失败", recovery: "出现 InTransit_PickedUp 后自动恢复", priority: "高", enabled: true },
-  { key: "no_update", scope: "全部团队 · 运输中包裹", trigger: "连续 >3个工作日无新的有效轨迹", trackStatus: "InTransit", exclusions: "派送失败、等待自提、同步失败", recovery: "出现新的有效轨迹后自动恢复", priority: "高", enabled: true },
-  { key: "stagnation", scope: "LM / FD / LM_TT", trigger: "同一地点停留 >3个工作日", trackStatus: "InTransit_Arrival / Other", exclusions: "海关节点、同步失败", recovery: "地点或处理节点发生变化", priority: "中", enabled: true },
-  { key: "customs_hold", scope: "跨境渠道", trigger: "海关处理节点停留 >3个工作日", trackStatus: "InTransit_CustomsProcessing", exclusions: "已放行、等待补充资料", recovery: "清关放行或离开海关节点", priority: "高", enabled: true },
+  { key: "not_online", scope: "全部团队 · 全部渠道", trigger: "签出后 >2个自然日仍无有效揽收轨迹", trackStatus: "InfoReceived / NotFound", exclusions: "签出时间缺失、同步失败", recovery: "出现 InTransit_PickedUp 后自动恢复", priority: "高", keywordMode: "辅助匹配", keywords: "Picked up, Accepted, Collected", ignoredKeywords: "Label created, Electronic data received", enabled: true },
+  { key: "no_update", scope: "全部团队 · 运输中包裹", trigger: "最后一条有效轨迹后 >3个工作日完全无新有效轨迹", trackStatus: "InTransit", exclusions: "派送失败、等待自提、同步失败", recovery: "出现任一新的有效轨迹后自动恢复", priority: "高", keywordMode: "辅助匹配", keywords: "Departed, Arrived, Processed, In transit", ignoredKeywords: "Label created, Electronic data received", enabled: true },
+  { key: "stagnation", scope: "LM / FD / LM_TT", trigger: "期间仍有轨迹更新，但连续扫描地点未变化 >3个工作日", trackStatus: "InTransit_Arrival / Other", exclusions: "海关节点、同步失败", recovery: "标准化地点或处理节点发生变化", priority: "中", keywordMode: "辅助匹配", keywords: "Arrived at facility, Processing center, Distribution center", ignoredKeywords: "Customs, Clearance", enabled: true },
+  { key: "customs_hold", scope: "跨境渠道", trigger: "海关处理节点停留 >3个工作日", trackStatus: "InTransit_CustomsProcessing", exclusions: "已放行、等待补充资料", recovery: "清关放行或离开海关节点", priority: "高", keywordMode: "辅助匹配", keywords: "Customs, Clearance, Held by customs", ignoredKeywords: "Released, Cleared", enabled: true },
   { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "超过承诺妥投时效 +2个工作日", trackStatus: "InTransit / Expired", exclusions: "已派送、已签收、轨迹断更", recovery: "进入派送或成功签收", priority: "高", enabled: true },
-  { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败或等待收件人自提", trackStatus: "DeliveryFailure / AvailableForPickup", exclusions: "已签收", recovery: "重新派送、签收或人工解决", priority: "紧急", enabled: true },
-  { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", enabled: true },
+  { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败或等待收件人自提", trackStatus: "DeliveryFailure / AvailableForPickup", exclusions: "已签收", recovery: "重新派送、签收或人工解决", priority: "紧急", keywordMode: "辅助匹配", keywords: "Delivery attempted, Invalid address, No recipient", ignoredKeywords: "Delivered", enabled: true },
+  { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Return to sender, Returning", ignoredKeywords: "Return completed", enabled: true },
   { key: "signout_timeout", scope: "全部团队 · 待签出履约单", trigger: "履约单生成后24小时仍未完成仓库签出", trackStatus: "ERP履约单状态 / 签出时间", exclusions: "已取消、人工冻结的履约单", recovery: "ERP回传签出时间后自动恢复", priority: "高", enabled: true },
-  { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", enabled: true },
+  { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", keywordMode: "辅助匹配", keywords: "地址错误, 邮编错误, 城市错误, 取号失败", ignoredKeywords: "已取消, 测试订单", enabled: true },
 ];
 
 const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
@@ -854,6 +858,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
+  const [priority, setPriority] = useState<PriorityFilter>("all");
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("all");
   const [dateRange, setDateRange] = useState<DateRangeKey>("90d");
   const [customStart, setCustomStart] = useState("2026-08-01");
@@ -881,14 +886,16 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
+      && (priority === "all" || order.severity === priority)
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, query, status, subStatus, team]);
+  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => item.kind === activeAlert
     && (team === "all" || item.team === team)
-    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, query, team]);
+    && (priority === "all" || item.severity === priority)
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, team]);
 
   const teamStats = TEAM_META[team];
   const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
@@ -897,6 +904,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const scopedStats = { monitored: scale(teamStats.monitored), alerts: scale(teamStats.alerts), todayNew: scale(teamStats.todayNew), recovered: scale(teamStats.recovered) };
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
+  const priorityFactor = priority === "critical" ? 0.24 : priority === "high" ? 0.58 : priority === "medium" ? 0.18 : 1;
+  const filteredAlertCount = (total: number) => Math.round(alertCount(total) * priorityFactor);
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
   const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
 
@@ -984,10 +993,11 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
+          <select value={priority} onChange={(event) => setPriority(event.target.value as PriorityFilter)} aria-label="预警优先级"><option value="all">全部优先级</option><option value="critical">紧急</option><option value="high">高</option><option value="medium">中</option></select>
           {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? scopedStats.alerts : alertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(ALERT_META[activeAlert].count)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
         <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : mode === "alerts" ? <>海关卡关独立于普通停滞；等待自提保留 <code>AvailableForPickup</code>，业务层归入派送异常并排除断更。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
@@ -1074,13 +1084,19 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
         <ChevronRight size={16} />
         <article><span className="layer-icon rule"><Radar size={15} /></span><div><strong>业务预警判断</strong><p>按团队、渠道、时间阈值、排除条件和恢复条件独立计算。</p></div><b>{rules.filter((item) => item.enabled).length}条启用</b></article>
       </section>
+      <section className="stagnation-compare" aria-label="物流停滞与物流断更区别">
+        <header><div><strong>停滞和断更如何区分</strong><span>两条规则互斥判断，避免同一包裹重复预警</span></div><b>关键区别：有没有新的有效轨迹</b></header>
+        <article><span className="compare-icon stagnation"><MapPin size={16} /></span><div><strong>物流停滞</strong><p>期间<strong>仍有轨迹更新</strong>，但标准化后的地点或处理中心连续超过3个工作日没有变化。</p><small>例：连续出现“Processing at Birmingham Center”</small></div></article>
+        <article><span className="compare-icon no-update"><History size={16} /></span><div><strong>物流断更</strong><p>最后一条有效轨迹之后，连续超过3个工作日<strong>完全没有新的有效轨迹</strong>。</p><small>Label Created等电子信息不重置断更计时</small></div></article>
+        <footer><ShieldCheck size={14} /><span>若期间存在新轨迹但地点未移动，判定“停滞”；若没有新有效轨迹，判定“断更”。海关节点优先归入“海关卡关”。</span></footer>
+      </section>
       <section className="panel business-rules">
         <div className="panel-title"><div><h2>业务预警规则</h2><p>使用标准模板配置阈值和适用范围，避免业务规则覆盖17TRACK官方状态。</p></div><button className="button secondary" onClick={() => { setEditing("no_update"); notify("已复制物流断更规则作为新规则草稿"); }}>+ 新增规则</button></div>
         <div className="business-rule-head"><span>规则 / 优先级</span><span>适用范围</span><span>触发条件</span><span>关联事实字段</span><span>恢复与排除</span><span>状态</span><span /></div>
         {rules.map((item) => <div className="business-rule-row" key={item.key}>
           <div><AlertBadge alert={item.key} /><small>{item.priority}优先级 · 当前命中 {ALERT_META[item.key].count} 单</small></div>
           <strong>{item.scope}</strong>
-          <p>{item.trigger}</p>
+          <p>{item.trigger}{item.keywordMode && item.keywordMode !== "不使用" && <small className="keyword-summary">关键字：{item.keywordMode}</small>}</p>
           <code>{item.trackStatus}</code>
           <p><b>恢复：</b>{item.recovery}<small><b>排除：</b>{item.exclusions}</small></p>
           <button className={`rule-switch ${item.enabled ? "enabled" : ""}`} aria-label={`${ALERT_META[item.key].label}${item.enabled ? "已启用" : "已停用"}`} aria-pressed={item.enabled} onClick={() => toggleRule(item.key)}><i />{item.enabled ? "启用" : "停用"}</button>
@@ -1094,6 +1110,7 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
           <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
           <section><h3>触发判断</h3><div className="rule-form-grid"><label className="wide"><span>触发条件</span><input defaultValue={rule.trigger} /></label><label><span>时间口径</span><select defaultValue={rule.key === "not_online" ? "自然日" : "工作日"}><option>工作日</option><option>自然日</option></select></label><label><span>阈值</span><input type="number" defaultValue={rule.key === "not_online" || rule.key === "transport_timeout" ? 2 : 3} /></label><label><span>优先级</span><select defaultValue={rule.priority}><option>紧急</option><option>高</option><option>中</option></select></label></div></section>
           <section className="readonly-fact"><h3>{isErpRule ? "ERP关联字段" : "17TRACK关联条件"} <small>只读映射</small></h3><div><code>{rule.trackStatus}</code><span>业务规则仅读取来源系统事实，不会写回或覆盖状态。</span></div></section>
+          <section className="keyword-config"><h3>{isErpRule ? "ERP错误关键字" : "轨迹关键字"} <small>可选辅助条件，不替代状态与时间判断</small></h3><div className="rule-form-grid"><label><span>使用方式</span><select defaultValue={rule.keywordMode ?? "不使用"}><option>不使用</option><option>辅助匹配</option><option>必须命中</option></select></label><label className="wide"><span>命中关键字 · 逗号分隔</span><input defaultValue={rule.keywords ?? ""} placeholder={isErpRule ? "例如：邮编错误, 取号失败" : "例如：Arrived at facility, Processing center"} /></label><label className="wide"><span>忽略或排除关键字</span><input defaultValue={rule.ignoredKeywords ?? ""} placeholder="例如：Label created, Released" /></label><label><span>匹配字段</span><select defaultValue={isErpRule ? "ERP错误信息" : "轨迹标题 + 详情"}><option>{isErpRule ? "ERP错误信息" : "轨迹标题 + 详情"}</option><option>仅标题</option><option>仅详情</option></select></label></div><p>{rule.key === "no_update" ? "断更规则中的关键字用于区分“有效轨迹”和电子占位信息；不是要求轨迹必须包含某个固定词。" : "优先使用17TRACK标准状态和结构化节点，关键字仅补充识别运输商原始文案。"}</p></section>
           <section><h3>排除与恢复</h3><div className="rule-form-grid"><label className="wide"><span>排除条件</span><input defaultValue={rule.exclusions} /></label><label className="wide"><span>自动恢复条件</span><input defaultValue={rule.recovery} /></label></div></section>
         </div>
         <footer><button className="button secondary" onClick={() => setEditing(null)}>取消</button><button className="button primary" onClick={() => { setEditing(null); notify(`${ALERT_META[rule.key].label}规则已保存为草稿`); }}>保存草稿</button></footer>
