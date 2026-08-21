@@ -65,6 +65,7 @@ type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
 type TeamKey = "all" | "LM" | "FD" | "LM_TT";
+type WarehouseKey = "all" | "winit" | "domestic" | "us_return" | "south_africa";
 type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 type LifecycleFilter = "all" | MonitorState;
 type PriorityFilter = "all" | Severity;
@@ -231,6 +232,21 @@ const TEAM_META: Record<TeamKey, { label: string; description: string; monitored
   LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 31, todayNew: 8, recovered: 5 },
 };
 
+const WAREHOUSE_META: Record<WarehouseKey, { label: string; codes: string; monitored: number }> = {
+  all: { label: "全部发货仓", codes: "全部仓库", monitored: 4704 },
+  winit: { label: "万邑通仓", codes: "USKY3-WINIT", monitored: 3189 },
+  domestic: { label: "国内仓", codes: "JY01 / NF01", monitored: 814 },
+  us_return: { label: "美国退货仓", codes: "XC01", monitored: 621 },
+  south_africa: { label: "南非仓", codes: "ZA01", monitored: 80 },
+};
+
+function warehouseKeyOf(code: string): Exclude<WarehouseKey, "all"> {
+  if (code === "USKY3-WINIT") return "winit";
+  if (code === "XC01") return "us_return";
+  if (code === "ZA01") return "south_africa";
+  return "domestic";
+}
+
 const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = [
   { key: "3d", label: "最近3天", factor: 0.102 },
   { key: "yesterday", label: "昨天", factor: 0.032 },
@@ -319,7 +335,7 @@ const ORDERS: Order[] = [
     trackingNo: "YT260803881729",
     team: "LM",
     platform: "PC8",
-    warehouse: "JY01",
+    warehouse: "ZA01",
     country: "GB",
     carrier: "YunExpress",
     channel: "云途英国专线",
@@ -633,7 +649,7 @@ const ORDERS: Order[] = [
     trackingNo: "LT260811445800",
     team: "FD",
     platform: "PC8",
-    warehouse: "JY01",
+    warehouse: "ZA01",
     country: "DE",
     carrier: "DHL eCommerce",
     channel: "云途德国专线",
@@ -1127,7 +1143,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
       <section className="overview-secondary">
         <article className="panel status-overview"><div className="panel-title"><div><h2>17TRACK状态分布</h2><p>物流事实 · 九个主状态总数等于有效运单数</p></div><button onClick={toMonitor}>查看运单<ChevronRight size={13} /></button></div><div className="status-stack">{statuses.map(([key, meta]) => <div key={key} style={{ width: `${Math.max(1.2, meta.count / 47.04)}%` }} className={meta.tone} title={`${meta.label} ${meta.count}`} />)}</div><div className="status-overview-list">{statuses.map(([key, meta]) => <button key={key} onClick={toMonitor}><i className={meta.tone} /><span>{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}</div><div className="sync-health"><strong>数据同步健康度</strong><span><i className="success" />同步正常 4,672</span><span><i className="failure" />同步失败 23</span><span><i className="stopped" />停止跟踪 9</span></div></article>
         <article className="panel structure-card"><div className="panel-title"><div><h2>目的国家分布</h2><p>按有效监控运单</p></div></div>{[["美国 US",72.4,3406],["英国 GB",12.6,593],["加拿大 CA",5.8,273],["德国 DE",3.9,184],["其他",5.3,248]].map(([name, share, count]) => <div className="structure-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
-        <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按ERP发货仓代码</p></div></div>{[["USKY3-WINIT",67.8,3189],["XC01",13.2,621],["NF01",10.9,513],["JY01",6.4,301],["其他",1.7,80]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
+        <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按业务仓库分组</p></div></div>{[["万邑通仓",67.8,3189],["国内仓",17.3,814],["美国退货仓",13.2,621],["南非仓",1.7,80]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
       </section>
     </>
   );
@@ -1135,6 +1151,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
 
 function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void; onImport: () => void; notify: (text: string) => void }) {
   const [team, setTeam] = useState<TeamKey>("all");
+  const [warehouse, setWarehouse] = useState<WarehouseKey>("all");
   const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertFilterKey>("all");
   const [status, setStatus] = useState<MainStatus | "all">("all");
@@ -1171,6 +1188,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           ? alerts.some((alert) => alert === "transport_timeout" || alert === "stagnation" || alert === "no_update" || alert === "customs_hold")
           : alerts.includes(activeAlert));
     return (team === "all" || order.team === team)
+      && (warehouse === "all" || warehouseKeyOf(order.warehouse) === warehouse)
       && (mode === "all" || (order.monitorState === "active" && matchesAlert))
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
@@ -1179,17 +1197,20 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team]);
+  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "fulfillment_preparation" || activeAlert === "all")
     && (team === "all" || item.team === team)
+    && (warehouse === "all" || warehouseKeyOf(item.warehouse) === warehouse)
     && (priority === "all" || item.severity === priority)
-    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, team]);
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, team, warehouse]);
 
   const teamStats = TEAM_META[team];
   const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
   const dateFactor = dateRange === "custom" ? Math.min(3, customDays / 30) : DATE_RANGE_META.find((item) => item.key === dateRange)?.factor ?? 1;
-  const scale = (value: number) => Math.max(0, Math.round(value * dateFactor));
+  const warehouseFactor = WAREHOUSE_META[warehouse].monitored / WAREHOUSE_META.all.monitored;
+  const scale = (value: number) => Math.max(0, Math.round(value * dateFactor * warehouseFactor));
+  const warehouseOptionCount = (value: number) => Math.max(0, Math.round(value * dateFactor * teamStats.monitored / TEAM_META.all.monitored));
   const scopedStats = { monitored: scale(teamStats.monitored), alerts: scale(teamStats.alerts), todayNew: scale(teamStats.todayNew), recovered: scale(teamStats.recovered) };
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
@@ -1251,7 +1272,18 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <div className="team-current"><span>当前范围</span><strong>{teamStats.label}</strong><small>{teamStats.description}</small></div>
       </section>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {rangeLabel}</span></div>
+      <section className="warehouse-switch" aria-label="发货仓筛选">
+        <div className="warehouse-switch-title"><MapPin size={15} /><span><strong>发货仓</strong><small>预警与运单同步筛选</small></span></div>
+        <div className="warehouse-options">
+          {(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => (
+            <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setSelected([]); }}>
+              <strong>{item.label}</strong><small>{item.codes}</small><b>{warehouseOptionCount(item.monitored).toLocaleString()}</b>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
 
       {!isPreTrackAlert && <><section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
@@ -1287,7 +1319,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">{teamStats.label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
         <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : mode === "alerts" ? <>页面只按6个一级分类收口；运输超时、断更、停滞等具体命中规则保留在列表标签和履约单详情中。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
