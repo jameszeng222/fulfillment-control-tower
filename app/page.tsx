@@ -64,8 +64,8 @@ type AlertFilterKey = AlertKey | "transit_exception" | "fulfillment_preparation"
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
-type TeamKey = "all" | "LM" | "FD" | "LM_TT";
-type WarehouseKey = "all" | "winit" | "domestic" | "us_return" | "south_africa";
+type TeamKey = "all" | "LM" | "FD" | "LM_TT" | "INFLUENCER";
+type WarehouseKey = "all" | "winit" | "domestic";
 type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 type LifecycleFilter = "all" | MonitorState;
 type PriorityFilter = "all" | Severity;
@@ -219,33 +219,36 @@ const BUSINESS_RULES: BusinessRule[] = [
 
 const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
   { id: "PRE-260812-091", kind: "signout_timeout", orderNo: "SO-260812-091", fulfillmentNo: "P26081200091", team: "LM", warehouse: "USKY3-WINIT", createdAt: "2026-08-12 08:16", age: "27小时", errorCode: "WAIT_SIGN_OUT", reason: "履约单已生成，仓库尚未完成签出", severity: "high" },
-  { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "XC01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
-  { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
+  { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "NF01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
+  { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "INFLUENCER", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
   { id: "ERR-260813-076", kind: "fulfillment_error", orderNo: "SO-260813-076", team: "LM", warehouse: "NF01", createdAt: "2026-08-13 07:51", age: "3小时54分", errorCode: "ERP_CARRIER_LABEL_FAILED", reason: "物流商取号失败，未能获取物流单号", severity: "critical" },
   { id: "ERR-260812-633", kind: "fulfillment_error", orderNo: "SO-260812-633", team: "FD", warehouse: "JY01", createdAt: "2026-08-12 19:28", age: "16小时17分", errorCode: "ERP_CITY_INVALID", reason: "收件城市无法识别，ERP建单校验未通过", severity: "high" },
 ];
 
 const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
   all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 136, todayNew: 33, recovered: 21 },
-  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 58, todayNew: 14, recovered: 9 },
-  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 47, todayNew: 11, recovered: 7 },
-  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 31, todayNew: 8, recovered: 5 },
+  LM: { label: "LM", description: "LM团队监控", monitored: 1978, alerts: 50, todayNew: 12, recovered: 8 },
+  FD: { label: "FD", description: "FD团队监控", monitored: 1406, alerts: 41, todayNew: 10, recovered: 6 },
+  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 820, alerts: 27, todayNew: 7, recovered: 4 },
+  INFLUENCER: { label: "网红团队", description: "网红订单监控", monitored: 500, alerts: 18, todayNew: 4, recovered: 3 },
 };
 
 const WAREHOUSE_META: Record<WarehouseKey, { label: string; codes: string; monitored: number }> = {
   all: { label: "全部发货仓", codes: "全部仓库", monitored: 4704 },
   winit: { label: "万邑通仓", codes: "USKY3-WINIT", monitored: 3189 },
-  domestic: { label: "国内仓", codes: "JY01 / NF01", monitored: 814 },
-  us_return: { label: "美国退货仓", codes: "XC01", monitored: 621 },
-  south_africa: { label: "南非仓", codes: "ZA01", monitored: 80 },
+  domestic: { label: "国内仓", codes: "JY01 / NF01", monitored: 1515 },
 };
 
 function warehouseKeyOf(code: string): Exclude<WarehouseKey, "all"> {
   if (code === "USKY3-WINIT") return "winit";
-  if (code === "XC01") return "us_return";
-  if (code === "ZA01") return "south_africa";
   return "domestic";
 }
+
+const C_END_CARRIER_OPTIONS: Record<WarehouseKey, string[]> = {
+  all: ["GOFO", "SpeedX", "USPS", "UPS", "Royal Mail", "DHL Paket", "3PE EXPRESS"],
+  winit: ["GOFO", "SpeedX", "USPS", "UPS"],
+  domestic: ["Royal Mail", "DHL Paket", "USPS", "3PE EXPRESS"],
+};
 
 const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = [
   { key: "3d", label: "最近3天", factor: 0.102 },
@@ -306,7 +309,7 @@ const baseEvents: TrackEvent[] = [
     time: "2026-08-03 15:42",
     title: "仓库签出",
     detail: "ERP签出时间，作为未上网和运输时效的唯一计算起点",
-    location: "XC01",
+    location: "NF01",
     source: "ERP",
     state: "normal",
   },
@@ -335,7 +338,7 @@ const ORDERS: Order[] = [
     trackingNo: "YT260803881729",
     team: "LM",
     platform: "PC8",
-    warehouse: "ZA01",
+    warehouse: "JY01",
     country: "GB",
     carrier: "YunExpress",
     channel: "云途英国专线",
@@ -372,7 +375,7 @@ const ORDERS: Order[] = [
     trackingNo: "3PE260809412095",
     team: "FD",
     platform: "PC1",
-    warehouse: "XC01",
+    warehouse: "NF01",
     country: "US",
     carrier: "3PE EXPRESS",
     channel: "Luvme Express",
@@ -395,7 +398,7 @@ const ORDERS: Order[] = [
         time: "2026-08-09 08:30",
         title: "仓库签出",
         detail: "ERP已签出，开始计算未上网时长",
-        location: "XC01",
+        location: "NF01",
         source: "ERP",
         state: "normal",
       },
@@ -484,7 +487,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080500954",
     orderNo: "SO-260805-954",
     trackingNo: "GFUS01050155127361",
-    team: "LM_TT",
+    team: "INFLUENCER",
     platform: "PC16",
     warehouse: "USKY3-WINIT",
     country: "US",
@@ -649,7 +652,7 @@ const ORDERS: Order[] = [
     trackingNo: "LT260811445800",
     team: "FD",
     platform: "PC8",
-    warehouse: "ZA01",
+    warehouse: "JY01",
     country: "DE",
     carrier: "DHL eCommerce",
     channel: "云途德国专线",
@@ -674,7 +677,7 @@ const ORDERS: Order[] = [
     trackingNo: "SFX260808731US",
     team: "LM",
     platform: "PC1",
-    warehouse: "XC01",
+    warehouse: "NF01",
     country: "US",
     carrier: "SpeedX",
     channel: "SpeedX Zonal",
@@ -691,7 +694,7 @@ const ORDERS: Order[] = [
     latestAt: "08-12 18:26",
     sla: "6工作日",
     alertHistory: [{ alert: "not_online", triggeredAt: "2026-08-10 09:31", recoveredAt: "2026-08-12 18:26", duration: "2天8小时55分", reason: "识别到 InTransit_PickedUp，系统自动恢复" }],
-    events: [{ time: "2026-08-08 09:31", title: "仓库签出", detail: "开始计算未上网时长", location: "XC01", source: "ERP", state: "normal" }, { time: "2026-08-12 18:26", title: "InTransit_PickedUp · 已揽收", detail: "真实上网，物流未上网预警自动恢复", location: "Queens, NY", source: "17TRACK", state: "success" }],
+    events: [{ time: "2026-08-08 09:31", title: "仓库签出", detail: "开始计算未上网时长", location: "NF01", source: "ERP", state: "normal" }, { time: "2026-08-12 18:26", title: "InTransit_PickedUp · 已揽收", detail: "真实上网，物流未上网预警自动恢复", location: "Queens, NY", source: "17TRACK", state: "success" }],
   },
   {
     fulfillmentNo: "P26080400518",
@@ -804,7 +807,7 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080400717",
     orderNo: "SO-260804-717",
     trackingNo: "YT260804717DE",
-    team: "LM_TT",
+    team: "INFLUENCER",
     platform: "PC8",
     warehouse: "JY01",
     country: "DE",
@@ -831,9 +834,9 @@ const ORDERS: Order[] = [
     fulfillmentNo: "P26080300605",
     orderNo: "SO-260803-605",
     trackingNo: "GFUS260803605779",
-    team: "FD",
+    team: "INFLUENCER",
     platform: "PC16",
-    warehouse: "XC01",
+    warehouse: "NF01",
     country: "US",
     carrier: "GOFO",
     channel: "WYT-WF7日达 Zonal",
@@ -860,7 +863,7 @@ const ORDERS: Order[] = [
     trackingNo: "YT260807338US",
     team: "LM",
     platform: "PC8",
-    warehouse: "XC01",
+    warehouse: "NF01",
     country: "US",
     carrier: "YunExpress",
     cEndCarrier: "USPS",
@@ -1070,7 +1073,7 @@ function OrderTable({ rows, selected, onToggle, onToggleAll, onOpen }: { rows: O
             <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
               <td className="select-cell" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择运单 ${order.trackingNo}`} checked={selected.includes(order.trackingNo)} onChange={() => onToggle(order.trackingNo)} /></td>
               <td>{alerts.length ? <><div className="alert-line"><AlertBadge alert={alerts[0]} />{alerts.length > 1 ? <span className="more-alerts">+{alerts.length - 1}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无实时预警</span>}{order.tags?.length ? <div className="business-tags">{order.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</td>
-              <td><div className="team-order-head"><strong>{order.fulfillmentNo}</strong><span>{order.team}</span></div><small>{order.orderNo} · {order.platform}</small></td>
+              <td><div className="team-order-head"><strong>{order.fulfillmentNo}</strong><span>{TEAM_META[order.team].label}</span></div><small>{order.orderNo} · {order.platform}</small></td>
               <td>
                 <a href={`https://t.17track.net/zh-cn#nums=${order.trackingNo}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                   {order.trackingNo}<ArrowUpRight size={12} />
@@ -1100,7 +1103,7 @@ function ErpAlertTable({ rows, notify }: { rows: ErpPreTrackAlert[]; notify: (te
         <tbody>{rows.map((item) => <tr key={item.id}>
           <td><AlertBadge alert={item.kind} /><small className={`risk ${item.severity}`}>{item.severity === "critical" ? "紧急" : "高"}</small></td>
           <td><strong>{item.orderNo}</strong><small>{item.fulfillmentNo ?? "履约单未生成"}</small></td>
-          <td><strong>{item.team}</strong><small>{item.warehouse}</small></td>
+          <td><strong>{TEAM_META[item.team].label}</strong><small>{item.warehouse}</small></td>
           <td><span className="erp-stage">{item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败"}</span><code>{item.errorCode}</code></td>
           <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : "ERP报错时间"}</small></td>
           <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : "等待修复并重试"}</small></td>
@@ -1143,7 +1146,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
       <section className="overview-secondary">
         <article className="panel status-overview"><div className="panel-title"><div><h2>17TRACK状态分布</h2><p>物流事实 · 九个主状态总数等于有效运单数</p></div><button onClick={toMonitor}>查看运单<ChevronRight size={13} /></button></div><div className="status-stack">{statuses.map(([key, meta]) => <div key={key} style={{ width: `${Math.max(1.2, meta.count / 47.04)}%` }} className={meta.tone} title={`${meta.label} ${meta.count}`} />)}</div><div className="status-overview-list">{statuses.map(([key, meta]) => <button key={key} onClick={toMonitor}><i className={meta.tone} /><span>{meta.label}</span><strong>{meta.count.toLocaleString()}</strong><small>{key}</small></button>)}</div><div className="sync-health"><strong>数据同步健康度</strong><span><i className="success" />同步正常 4,672</span><span><i className="failure" />同步失败 23</span><span><i className="stopped" />停止跟踪 9</span></div></article>
         <article className="panel structure-card"><div className="panel-title"><div><h2>目的国家分布</h2><p>按有效监控运单</p></div></div>{[["美国 US",72.4,3406],["英国 GB",12.6,593],["加拿大 CA",5.8,273],["德国 DE",3.9,184],["其他",5.3,248]].map(([name, share, count]) => <div className="structure-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
-        <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按业务仓库分组</p></div></div>{[["万邑通仓",67.8,3189],["国内仓",17.3,814],["美国退货仓",13.2,621],["南非仓",1.7,80]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
+        <article className="panel structure-card"><div className="panel-title"><div><h2>发货仓分布</h2><p>按业务仓库分组</p></div></div>{[["万邑通仓",67.8,3189],["国内仓",32.2,1515]].map(([name, share, count]) => <div className="structure-row warehouse-row" key={String(name)}><div><strong>{name}</strong><small>{Number(count).toLocaleString()}单</small></div><i><b style={{ width: `${share}%` }} /></i><span>{share}%</span></div>)}</article>
       </section>
     </>
   );
@@ -1152,6 +1155,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
 function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void; onImport: () => void; notify: (text: string) => void }) {
   const [team, setTeam] = useState<TeamKey>("all");
   const [warehouse, setWarehouse] = useState<WarehouseKey>("all");
+  const [cEndCarrier, setCEndCarrier] = useState("all");
   const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertFilterKey>("all");
   const [status, setStatus] = useState<MainStatus | "all">("all");
@@ -1189,6 +1193,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           : alerts.includes(activeAlert));
     return (team === "all" || order.team === team)
       && (warehouse === "all" || warehouseKeyOf(order.warehouse) === warehouse)
+      && (cEndCarrier === "all" || getCEndCarrier(order) === cEndCarrier)
       && (mode === "all" || (order.monitorState === "active" && matchesAlert))
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
@@ -1197,7 +1202,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
+  }), [activeAlert, archivedIds, cEndCarrier, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "fulfillment_preparation" || activeAlert === "all")
     && (team === "all" || item.team === team)
@@ -1206,6 +1211,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, team, warehouse]);
 
   const teamStats = TEAM_META[team];
+  const availableCEndCarriers = C_END_CARRIER_OPTIONS[warehouse];
   const customDays = Math.max(1, Math.round((dateWindow.end.getTime() - dateWindow.start.getTime()) / 86400000) + 1);
   const dateFactor = dateRange === "custom" ? Math.min(3, customDays / 30) : DATE_RANGE_META.find((item) => item.key === dateRange)?.factor ?? 1;
   const warehouseFactor = WAREHOUSE_META[warehouse].monitored / WAREHOUSE_META.all.monitored;
@@ -1276,7 +1282,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <div className="warehouse-switch-title"><MapPin size={15} /><span><strong>发货仓</strong><small>预警与运单同步筛选</small></span></div>
         <div className="warehouse-options">
           {(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => (
-            <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setSelected([]); }}>
+            <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setCEndCarrier("all"); setSelected([]); }}>
               <strong>{item.label}</strong><small>{item.codes}</small><b>{warehouseOptionCount(item.monitored).toLocaleString()}</b>
             </button>
           ))}
@@ -1314,6 +1320,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         <div className="panel-toolbar">
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
+          <select value={cEndCarrier} disabled={isPreTrackAlert} onChange={(event) => setCEndCarrier(event.target.value)} aria-label="C端物流渠道"><option value="all">{isPreTrackAlert ? "生成运单后筛选C端渠道" : "全部C端渠道"}</option>{availableCEndCarriers.map((item) => <option key={item} value={item}>{item}</option>)}</select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
           <select value={priority} onChange={(event) => setPriority(event.target.value as PriorityFilter)} aria-label="预警优先级"><option value="all">全部优先级</option><option value="critical">紧急</option><option value="high">高</option><option value="medium">中</option></select>
           {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
@@ -1429,7 +1436,7 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
       {rule && <div className="modal-mask" onMouseDown={() => setEditing(null)}><section className="rule-editor" role="dialog" aria-modal="true" aria-label={`配置${ALERT_META[rule.key].label}规则`} onMouseDown={(event) => event.stopPropagation()}>
         <header><div><span>业务预警规则</span><h2>{ALERT_META[rule.key].label}</h2><p>规则代码：{rule.key} · {isErpRule ? "ERP" : "17TRACK"}事实字段只读</p></div><button onClick={() => setEditing(null)} aria-label="关闭规则配置"><X size={17} /></button></header>
         <div className="rule-editor-body">
-          <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
+          <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option><option>网红团队</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
           <section><h3>触发判断</h3><div className="rule-form-grid"><label className="wide"><span>触发条件</span><input defaultValue={rule.trigger} /></label><label><span>时间口径</span><select defaultValue={rule.key === "not_online" ? "自然日" : "工作日"}><option>工作日</option><option>自然日</option></select></label><label><span>阈值</span><input type="number" defaultValue={rule.key === "not_online" || rule.key === "transport_timeout" ? 2 : 3} /></label><label><span>优先级</span><select defaultValue={rule.priority}><option>紧急</option><option>高</option><option>中</option></select></label></div></section>
           <section className="readonly-fact"><h3>{isErpRule ? "ERP关联字段" : "17TRACK关联条件"} <small>只读映射</small></h3><div><code>{rule.trackStatus}</code><span>业务规则仅读取来源系统事实，不会写回或覆盖状态。</span></div></section>
           <section className="keyword-config"><h3>{isErpRule ? "ERP错误关键字" : "轨迹关键字"} <small>可选辅助条件，不替代状态与时间判断</small></h3><div className="rule-form-grid"><label><span>使用方式</span><select defaultValue={rule.keywordMode ?? "不使用"}><option>不使用</option><option>辅助匹配</option><option>必须命中</option></select></label><label className="wide"><span>命中关键字 · 逗号分隔</span><input defaultValue={rule.keywords ?? ""} placeholder={isErpRule ? "例如：邮编错误, 取号失败" : "例如：Arrived at facility, Processing center"} /></label><label className="wide"><span>忽略或排除关键字</span><input defaultValue={rule.ignoredKeywords ?? ""} placeholder="例如：Label created, Released" /></label><label><span>匹配字段</span><select defaultValue={isErpRule ? "ERP错误信息" : "轨迹标题 + 详情"}><option>{isErpRule ? "ERP错误信息" : "轨迹标题 + 详情"}</option><option>仅标题</option><option>仅详情</option></select></label></div><p>{rule.key === "no_update" ? "断更规则中的关键字用于区分“有效轨迹”和电子占位信息；不是要求轨迹必须包含某个固定词。" : "优先使用17TRACK标准状态和结构化节点，关键字仅补充识别运输商原始文案。"}</p></section>
@@ -1495,7 +1502,7 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
         <header><div><span>物流详情</span><button className="erp-fulfillment-link" onClick={() => notify(`${order.fulfillmentNo}：已模拟跳转ERP履约单详情；正式环境接入ERP详情URL模板`)}>{order.fulfillmentNo}<ArrowUpRight size={14} /></button><p>{order.orderNo} · {order.trackingNo}</p></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
         <div className="drawer-status"><span className="fact-label">17TRACK事实</span><span className="drawer-main-status">主状态</span><StatusBadge status={order.status} /><code>{order.status}</code><span className="drawer-sub-status">子状态 · {SUB_STATUS_LABELS[order.subStatus] ?? "未映射"}</span><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
         <div className="drawer-body">
-          <section className="drawer-summary"><div><span>支付时间</span><strong>{paymentAt}</strong></div><div><span>履约单创建时间</span><strong>{fulfillmentCreatedAt}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>签收时间</span><strong>{deliveredAt}</strong></div><div><span>所属团队</span><strong>{order.team}</strong></div><div><span>C端物流商</span><strong>{cEndCarrier}</strong></div><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
+          <section className="drawer-summary"><div><span>支付时间</span><strong>{paymentAt}</strong></div><div><span>履约单创建时间</span><strong>{fulfillmentCreatedAt}</strong></div><div><span>签出时间</span><strong>{order.shippedAt}</strong></div><div><span>签收时间</span><strong>{deliveredAt}</strong></div><div><span>所属团队</span><strong>{TEAM_META[order.team].label}</strong></div><div><span>C端物流商</span><strong>{cEndCarrier}</strong></div><div><span>物流渠道</span><strong>{order.channel}</strong></div><div><span>发货仓 / 国家</span><strong>{order.warehouse} → {order.country}</strong></div><div><span>运输时长 / SLA</span><strong>{order.elapsed} / {order.sla}</strong></div></section>
           <section className="layer-detail"><article className="fact-detail"><header><span><PackageSearch size={15} /></span><div><strong>物流事实</strong><small>来自17TRACK，代码和轨迹原样保存</small></div></header><dl><div><dt>主状态</dt><dd><b>{STATUS_META[order.status].label}</b><code>{order.status}</code></dd></div><div><dt>子状态</dt><dd><b>{SUB_STATUS_LABELS[order.subStatus] ?? "未映射，保留原值"}</b><code>{order.subStatus}</code></dd></div><div><dt>17TRACK运输商</dt><dd><b>{order.carrier}</b></dd></div><div><dt>运输商原文</dt><dd><b>{order.latestTrack}</b></dd></div><div><dt>最近同步</dt><dd><b>{order.syncAt}</b><code>{order.syncStatus}</code></dd></div></dl></article><article className={`judgment-detail ${order.monitorState}`}><header><span><Radar size={15} /></span><div><strong>业务监控判断</strong><small>同一履约单只突出最高优先级预警</small></div><MonitorBadge state={order.monitorState} /></header><div className="detail-alert-list">{alerts.length ? alerts.map((alert, index) => <div key={alert}><span>{index === 0 ? "主预警" : "关联预警"}</span><AlertBadge alert={alert} /><b>预警中</b></div>) : <span className="no-alert"><CheckCircle2 size={12} />未命中实时预警</span>}</div>{order.tags?.length ? <div className="drawer-tags"><span>业务标签</span>{order.tags.map((tag) => <b key={tag}>{tag}</b>)}</div> : null}<p>{order.evidence}</p></article></section>
           {order.alertHistory?.length ? <section className="alert-history"><header><div><History size={15} /><span><strong>历史预警</strong><small>仅在履约单详情保留</small></span></div><b>{order.alertHistory.length}条</b></header>{order.alertHistory.map((history, index) => <article key={`${history.alert}-${index}`}><AlertBadge alert={history.alert} /><span className="history-recovered">已自动恢复</span><dl><div><dt>触发时间</dt><dd>{history.triggeredAt}</dd></div><div><dt>恢复时间</dt><dd>{history.recoveredAt}</dd></div><div><dt>超时时长</dt><dd>{history.duration}</dd></div><div><dt>恢复原因</dt><dd>{history.reason}</dd></div></dl></article>)}</section> : null}
           {order.syncStatus === "failure" && <div className="sync-warning"><CircleAlert size={16} /><div><strong>保留上次成功状态，暂停时间类预警</strong><p>同步失败不会把主状态改成NotFound；系统暂停未上网、断更、停滞和卡关判断，恢复同步后自动重算。</p></div></div>}
