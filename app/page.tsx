@@ -57,6 +57,7 @@ type AlertKey =
   | "not_online"
   | "delivery_failure"
   | "returning"
+  | "carrier_exception"
   | "signout_timeout"
   | "fulfillment_error";
 type AlertFilterKey = AlertKey | "transit_exception";
@@ -168,6 +169,7 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   not_online: { label: "物流未上网", count: 12, hint: "签出 >2自然日" },
   delivery_failure: { label: "派送异常", count: 14, hint: "失败 / 等待自提" },
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
+  carrier_exception: { label: "渠道异常", count: 7, hint: "丢失 / 破损 / 销毁 / 延误" },
   signout_timeout: { label: "超时未签出", count: 6, hint: "履约单生成 >24小时" },
   fulfillment_error: { label: "履约单报错", count: 11, hint: "ERP建单 / 取号失败" },
 };
@@ -179,6 +181,7 @@ const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; c
   { key: "not_online", ...ALERT_META.not_online },
   { key: "delivery_failure", ...ALERT_META.delivery_failure },
   { key: "returning", ...ALERT_META.returning },
+  { key: "carrier_exception", ...ALERT_META.carrier_exception },
   { key: "signout_timeout", ...ALERT_META.signout_timeout },
   { key: "fulfillment_error", ...ALERT_META.fulfillment_error },
 ];
@@ -193,12 +196,13 @@ const ALERT_FOCUS_STATUS: Record<AlertFilterKey, MainStatus> = {
   not_online: "InfoReceived",
   delivery_failure: "DeliveryFailure",
   returning: "Exception",
+  carrier_exception: "Exception",
   signout_timeout: "InfoReceived",
   fulfillment_error: "NotFound",
 };
 
 const ALERT_PRIORITY: Exclude<AlertKey, "all">[] = [
-  "fulfillment_error", "signout_timeout", "returning", "delivery_failure", "customs_hold", "no_update", "stagnation", "not_online", "transport_timeout",
+  "fulfillment_error", "signout_timeout", "returning", "carrier_exception", "delivery_failure", "customs_hold", "no_update", "stagnation", "not_online", "transport_timeout",
 ];
 
 const BUSINESS_RULES: BusinessRule[] = [
@@ -209,6 +213,7 @@ const BUSINESS_RULES: BusinessRule[] = [
   { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "未妥投且超过承诺妥投时效 +2个工作日", trackStatus: "InTransit / Expired", exclusions: "已派送、已签收、轨迹断更", recovery: "进入派送或签收；妥投超时转入渠道分析", priority: "高", enabled: true },
   { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败或等待收件人自提", trackStatus: "DeliveryFailure / AvailableForPickup", exclusions: "已签收", recovery: "重新派送、签收或人工解决", priority: "紧急", keywordMode: "辅助匹配", keywords: "Delivery attempted, Invalid address, No recipient", ignoredKeywords: "Delivered", enabled: true },
   { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Return to sender, Returning", ignoredKeywords: "Return completed", enabled: true },
+  { key: "carrier_exception", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别丢失、破损、销毁、延误或其他渠道异常", trackStatus: "Exception_Lost / Damage / Destroyed / Delayed / Security / Cancel / Other", exclusions: "已归入退运、派送异常或海关卡关", recovery: "出现恢复运输、签收结果或人工确认关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Lost, Damaged, Destroyed, Delayed, Cancelled", ignoredKeywords: "Delivered, Returning", enabled: true },
   { key: "signout_timeout", scope: "全部团队 · 待签出履约单", trigger: "履约单生成后24小时仍未完成仓库签出", trackStatus: "ERP履约单状态 / 签出时间", exclusions: "已取消、人工冻结的履约单", recovery: "ERP回传签出时间后自动恢复", priority: "高", enabled: true },
   { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", keywordMode: "辅助匹配", keywords: "地址错误, 邮编错误, 城市错误, 取号失败", ignoredKeywords: "已取消, 测试订单", enabled: true },
 ];
@@ -222,10 +227,10 @@ const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
 ];
 
 const TEAM_META: Record<TeamKey, { label: string; description: string; monitored: number; alerts: number; todayNew: number; recovered: number }> = {
-  all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 129, todayNew: 31, recovered: 21 },
-  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 55, todayNew: 13, recovered: 9 },
-  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 45, todayNew: 11, recovered: 7 },
-  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 29, todayNew: 7, recovered: 5 },
+  all: { label: "全部团队", description: "跨团队总览", monitored: 4704, alerts: 136, todayNew: 33, recovered: 21 },
+  LM: { label: "LM", description: "LM团队监控", monitored: 2198, alerts: 58, todayNew: 14, recovered: 9 },
+  FD: { label: "FD", description: "FD团队监控", monitored: 1586, alerts: 47, todayNew: 11, recovered: 7 },
+  LM_TT: { label: "LM_TT", description: "LM_TT团队监控", monitored: 920, alerts: 31, todayNew: 8, recovered: 5 },
 };
 
 const DATE_RANGE_META: { key: DateRangeKey; label: string; factor: number }[] = [
@@ -835,6 +840,112 @@ const ORDERS: Order[] = [
     sla: "7工作日 +2",
     events: [...baseEvents, { time: "2026-08-12 22:18", title: "Exception_Returning · 包裹退运", detail: "包裹退运为主预警，运输超时保留为关联预警", location: "Ontario, CA", source: "17TRACK", state: "warning" }],
   },
+  {
+    fulfillmentNo: "P26080700338",
+    orderNo: "SO-260807-338",
+    trackingNo: "YT260807338US",
+    team: "LM",
+    platform: "PC8",
+    warehouse: "XC01",
+    country: "US",
+    carrier: "YunExpress",
+    cEndCarrier: "USPS",
+    channel: "云途美国专线",
+    status: "Exception",
+    subStatus: "Exception_Lost",
+    alert: "carrier_exception",
+    severity: "critical",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:46",
+    evidence: "17TRACK子状态为Exception_Lost，未命中退运、派送或海关规则，归入渠道异常并按紧急优先级处理。",
+    shippedAt: "2026-08-07 09:18",
+    elapsed: "6天 2小时",
+    abnormalAge: "丢失 9小时",
+    latestTrack: "Package reported lost by carrier",
+    latestAt: "08-13 02:41",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-13 02:41", title: "Exception_Lost · 承运商报告丢失", detail: "渠道异常具体原因保留为丢失，建议立即向承运商核查", location: "Los Angeles, CA", source: "17TRACK", state: "warning" }],
+  },
+  {
+    fulfillmentNo: "P26080800426",
+    orderNo: "SO-260808-426",
+    trackingNo: "SPXNYC26080842602",
+    team: "FD",
+    platform: "PC1",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "SpeedX",
+    channel: "WYT-WF5日达 Zonal",
+    status: "Exception",
+    subStatus: "Exception_Damage",
+    alert: "carrier_exception",
+    severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:43",
+    evidence: "17TRACK返回Exception_Damage，渠道已报告包裹在运输过程中破损。",
+    shippedAt: "2026-08-08 11:36",
+    elapsed: "5天",
+    abnormalAge: "破损 14小时",
+    latestTrack: "Shipment damaged in transit",
+    latestAt: "08-12 21:27",
+    sla: "5工作日",
+    events: [...baseEvents, { time: "2026-08-12 21:27", title: "Exception_Damage · 运输破损", detail: "保留17TRACK官方破损原因，业务层归入渠道异常", location: "New York, NY", source: "17TRACK", state: "warning" }],
+  },
+  {
+    fulfillmentNo: "P26080200153",
+    orderNo: "SO-260802-153",
+    trackingNo: "GFUS260802153884",
+    team: "LM_TT",
+    platform: "PC16",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "GOFO",
+    channel: "WYT-WF7日达 Zonal",
+    status: "Exception",
+    subStatus: "Exception_Destroyed",
+    alert: "carrier_exception",
+    severity: "critical",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:39",
+    evidence: "17TRACK子状态为Exception_Destroyed，属于不可逆渠道异常，需要立即核查处置结果。",
+    shippedAt: "2026-08-02 16:05",
+    elapsed: "10天 19小时",
+    abnormalAge: "销毁 1天 3小时",
+    latestTrack: "Shipment destroyed by carrier",
+    latestAt: "08-12 08:44",
+    sla: "7工作日",
+    events: [...baseEvents, { time: "2026-08-12 08:44", title: "Exception_Destroyed · 包裹已销毁", detail: "渠道异常按紧急优先级展示，不与包裹退运重复", location: "Chicago, IL", source: "17TRACK", state: "warning" }],
+  },
+  {
+    fulfillmentNo: "P26080600661",
+    orderNo: "SO-260806-661",
+    trackingNo: "42075001926080666101",
+    team: "LM",
+    platform: "PC1",
+    warehouse: "USKY3-WINIT",
+    country: "US",
+    carrier: "USPS",
+    channel: "USPS Ground Advantage",
+    status: "Exception",
+    subStatus: "Exception_Delayed",
+    alert: "carrier_exception",
+    secondaryAlerts: ["transport_timeout"],
+    severity: "high",
+    monitorState: "active",
+    syncStatus: "success",
+    syncAt: "08-13 11:45",
+    evidence: "17TRACK明确标记Exception_Delayed，同时已超过渠道SLA；渠道异常作为主预警，运输超时作为关联预警。",
+    shippedAt: "2026-08-06 07:42",
+    elapsed: "7天 4小时",
+    abnormalAge: "延误 2天 1小时",
+    latestTrack: "Delivery delayed due to carrier operations",
+    latestAt: "08-11 10:06",
+    sla: "5工作日 +2",
+    events: [...baseEvents, { time: "2026-08-11 10:06", title: "Exception_Delayed · 渠道运输延误", detail: "官方延误状态归入渠道异常；超过SLA的业务判断作为关联预警", location: "Denver, CO", source: "17TRACK", state: "warning" }],
+  },
 ];
 
 const NAV: { id: View; label: string; desc: string; icon: LucideIcon }[] = [
@@ -1001,16 +1112,16 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
   const daily = [188, 224, 207, 246, 281, 258, 310, 296, 338, 321, 356, 374, 348, 392];
   return (
     <>
-      <PageHeader eyebrow="OPERATIONS OVERVIEW" title="数据总览" description="从履约准备、物流轨迹、渠道结构和17TRACK状态看当前物流履约盘面。" actions={<><button className="button secondary"><CalendarDays size={15} />近30天</button><button className="button primary" onClick={toMonitor}><Radar size={15} />查看129条预警</button></>} />
+      <PageHeader eyebrow="OPERATIONS OVERVIEW" title="数据总览" description="从履约准备、物流轨迹、渠道结构和17TRACK状态看当前物流履约盘面。" actions={<><button className="button secondary"><CalendarDays size={15} />近30天</button><button className="button primary" onClick={toMonitor}><Radar size={15} />查看136条预警</button></>} />
       <section className="overview-kpis">
         <article><div><span>有效监控运单</span><PackageSearch size={18} /></div><strong>4,704</strong><small><b>↑ 8.4%</b> 较上周期 · 36个渠道</small></article>
         <article><div><span>已签收</span><PackageCheck size={18} /></div><strong>2,480</strong><small>签收率 <b>52.7%</b> · 自动归档</small></article>
         <article><div><span>运输中</span><Truck size={18} /></div><strong>2,079</strong><small>占全部运单 <b>44.2%</b></small></article>
-        <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>129</strong><small>含ERP履约准备预警17条</small></article>
+        <article className="warning"><div><span>活跃预警</span><AlertTriangle size={18} /></div><strong>136</strong><small>含渠道异常7条 · ERP预警17条</small></article>
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
       <section className="overview-runline"><span className="live-dot" /><div><strong>轨迹监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描</small></div><span>今日新增预警 <b>26</b></span><span>今日恢复 <b className="positive">21</b></span><span>同步失败 <b>23</b></span></section>
-      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>九类预警覆盖ERP履约准备与物流运输，不覆盖官方状态</small></p><b>129条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
+      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>十类规则覆盖履约准备、物流运输与渠道异常，不覆盖官方状态</small></p><b>136条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
         <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
@@ -1164,7 +1275,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         ))}
       </section>}
 
-      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入九类实时预警</small></section>}
+      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入十类实时预警</small></section>}
 
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
@@ -1238,7 +1349,7 @@ function Settings({ onImport, notify }: { onImport: () => void; notify: (text: s
   const [tab, setTab] = useState<"business" | "data" | "sla" | "statuses">("business");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("9条业务预警规则已发布，后续命中按新版本计算")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("10条业务预警规则已发布，后续命中按新版本计算")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
       <div className="settings-tabs"><button className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}><Radar size={15} />业务预警规则</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button></div>
       {tab === "business" ? <BusinessRules notify={notify} /> : tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
     </>
@@ -1391,7 +1502,7 @@ export default function Home() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span><Radar size={20} /></span><div><strong>履约雷达</strong><small>17TRACK CONTROL</small></div></div>
-        <nav>{NAV.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={17} /><span><strong>{item.label}</strong><small>{item.desc}</small></span>{item.id === "monitor" && <b>129</b>}</button>; })}</nav>
+        <nav>{NAV.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={17} /><span><strong>{item.label}</strong><small>{item.desc}</small></span>{item.id === "monitor" && <b>136</b>}</button>; })}</nav>
         <div className="sidebar-foot"><div><span className="live-dot" /><p><strong>数据同步正常</strong><small>17TRACK · 2分钟前</small></p></div><div className="user"><span>YZ</span><p><strong>运营管理员</strong><small>物流部 · 全部权限</small></p></div></div>
       </aside>
       <main>
