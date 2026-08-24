@@ -1171,8 +1171,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const isPreTrackAlert = activeAlert === "fulfillment_preparation";
 
-  const demoEnd = new Date("2026-08-13T23:59:59");
-  const dateWindow = (() => {
+  const dateWindow = useMemo(() => {
+    const demoEnd = new Date("2026-08-13T23:59:59");
     if (dateRange === "custom") return { start: new Date(`${customStart}T00:00:00`), end: new Date(`${customEnd}T23:59:59`) };
     if (dateRange === "yesterday") return { start: new Date("2026-08-12T00:00:00"), end: new Date("2026-08-12T23:59:59") };
     const days = dateRange === "3d" ? 3 : dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : 30;
@@ -1180,7 +1180,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
     start.setDate(start.getDate() - days + 1);
     start.setHours(0, 0, 0, 0);
     return { start, end: demoEnd };
-  })();
+  }, [customEnd, customStart, dateRange]);
 
   const rows = useMemo(() => ORDERS.map((order) => archivedIds.includes(order.trackingNo) ? { ...order, monitorState: "archived" as MonitorState } : order).filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
@@ -1201,7 +1201,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, cEndCarrier, country, customEnd, customStart, dateRange, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
+  }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "fulfillment_preparation" || activeAlert === "all")
     && (team === "all" || item.team === team)
@@ -1332,7 +1332,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
         <div className="table-footer"><span>{isPreTrackAlert ? "ERP修复并重试成功后自动恢复 · 生成物流单号后进入17TRACK轨迹监控" : "业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中"}</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
       </section>
-      {showArchiveConfirm && <div className="modal-mask" onMouseDown={() => setShowArchiveConfirm(false)}><section className="archive-confirm" role="dialog" aria-modal="true" aria-label="确认归档业务监控" onMouseDown={(event) => event.stopPropagation()}><span className="archive-confirm-icon"><Archive size={22} /></span><h2>归档 {selected.length} 条业务监控记录？</h2><p>归档后运单会移出“当前预警”，但不会删除或改写17TRACK主状态、子状态及完整轨迹。你仍可在“全部运单 → 已归档”中查询。</p><div><button className="button secondary" onClick={() => setShowArchiveConfirm(false)}>取消</button><button className="button primary" onClick={confirmArchive}>确认归档</button></div></section></div>}
+      {showArchiveConfirm && <div className="modal-mask" role="button" tabIndex={0} aria-label="关闭归档确认" onClick={(event) => { if (event.target === event.currentTarget) setShowArchiveConfirm(false); }} onKeyDown={(event) => { if (event.key === "Escape") setShowArchiveConfirm(false); }}><section className="archive-confirm" role="dialog" aria-modal="true" aria-label="确认归档业务监控"><span className="archive-confirm-icon"><Archive size={22} /></span><h2>归档 {selected.length} 条业务监控记录？</h2><p>归档后运单会移出“当前预警”，但不会删除或改写17TRACK主状态、子状态及完整轨迹。你仍可在“全部运单 → 已归档”中查询。</p><div><button className="button secondary" onClick={() => setShowArchiveConfirm(false)}>取消</button><button className="button primary" onClick={confirmArchive}>确认归档</button></div></section></div>}
     </>
   );
 }
@@ -1432,7 +1432,7 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
         </div>)}
         <footer><ShieldCheck size={14} /><span>规则发布后只影响新的预警判断；历史命中记录保留当时的规则版本，便于追溯。</span></footer>
       </section>
-      {rule && <div className="modal-mask" onMouseDown={() => setEditing(null)}><section className="rule-editor" role="dialog" aria-modal="true" aria-label={`配置${ALERT_META[rule.key].label}规则`} onMouseDown={(event) => event.stopPropagation()}>
+      {rule && <div className="modal-mask" role="button" tabIndex={0} aria-label="关闭规则配置" onClick={(event) => { if (event.target === event.currentTarget) setEditing(null); }} onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); }}><section className="rule-editor" role="dialog" aria-modal="true" aria-label={`配置${ALERT_META[rule.key].label}规则`}>
         <header><div><span>业务预警规则</span><h2>{ALERT_META[rule.key].label}</h2><p>规则代码：{rule.key} · {isErpRule ? "ERP" : "17TRACK"}事实字段只读</p></div><button onClick={() => setEditing(null)} aria-label="关闭规则配置"><X size={17} /></button></header>
         <div className="rule-editor-body">
           <section><h3>适用范围</h3><div className="rule-form-grid"><label><span>团队</span><select defaultValue="全部团队"><option>全部团队</option><option>LM</option><option>FD</option><option>LM_TT</option><option>网红团队</option></select></label><label><span>物流渠道</span><select defaultValue="全部渠道"><option>全部渠道</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select></label><label><span>目的国家</span><select defaultValue="全部国家"><option>全部国家</option><option>US</option><option>GB</option></select></label></div></section>
@@ -1496,8 +1496,8 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
   const deliveredAt = getDeliveredAt(order);
   const cEndCarrier = getCEndCarrier(order);
   return (
-    <div className="drawer-mask" onClick={onClose}>
-      <aside className="drawer" onClick={(event) => event.stopPropagation()}>
+    <div className="drawer-mask" role="button" tabIndex={0} aria-label="关闭物流详情" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
+      <aside className="drawer">
         <header><div><span>物流详情</span><button className="erp-fulfillment-link" onClick={() => notify(`${order.fulfillmentNo}：已模拟跳转ERP履约单详情；正式环境接入ERP详情URL模板`)}>{order.fulfillmentNo}<ArrowUpRight size={14} /></button><p>{order.orderNo} · {order.trackingNo}</p></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
         <div className="drawer-status"><span className="fact-label">17TRACK事实</span><span className="drawer-main-status">主状态</span><StatusBadge status={order.status} /><code>{order.status}</code><span className="drawer-sub-status">子状态 · {SUB_STATUS_LABELS[order.subStatus] ?? "未映射"}</span><code>{order.subStatus}</code><SyncBadge status={order.syncStatus} /></div>
         <div className="drawer-body">
@@ -1517,8 +1517,8 @@ function DetailDrawer({ order, onClose, notify }: { order: Order; onClose: () =>
 function ImportModal({ onClose, notify }: { onClose: () => void; notify: (text: string) => void }) {
   const [validated, setValidated] = useState(false);
   return (
-    <div className="modal-mask" onClick={onClose}>
-      <section className="import-modal" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-mask" role="button" tabIndex={0} aria-label="关闭履约单导入" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
+      <section className="import-modal" role="dialog" aria-modal="true" aria-label="履约单数据导入">
         <header><div><span>履约单数据导入</span><h2>导入前先校验，不让脏数据进入预警计算</h2></div><button onClick={onClose}><X size={18} /></button></header>
         {!validated ? <div className="import-ready"><div className="upload-zone"><FileSpreadsheet size={30} /><strong>履约单导入模板.xlsx</strong><span>已识别：履约单导入 · 6,948行 · 13列</span><button className="button primary" onClick={() => setValidated(true)}>开始校验</button></div><div className="import-hints"><div><Check size={14} /><span>按表头名称匹配，不依赖固定列顺序</span></div><div><Check size={14} /><span>长运单号以文本读取，保留完整精度</span></div><div><Check size={14} /><span>运单号 + 运输商代码作为17TRACK唯一追踪键</span></div></div></div> : <div className="validation-result"><div className="validation-summary"><span className="success-ring"><Check size={24} /></span><div><strong>校验完成</strong><p>可安全写入的记录已与问题数据分开。</p></div></div><div className="validation-grid"><article><span>原始行数</span><strong>6,948</strong><small>100%</small></article><article className="good"><span>有效唯一运单</span><strong>4,704</strong><small>进入轨迹监控</small></article><article className="warn"><span>跳过重复</span><strong>1,998</strong><small>完全相同行</small></article><article className="bad"><span>拒绝导入</span><strong>238</strong><small>运单号缺失/为19</small></article></div><div className="validation-lines"><div><span>签出时间缺失</span><strong>314行</strong><em>导入但不参与时间类预警</em></div><div><span>超15位纯数字运单</span><strong>704行</strong><em>已强制转换为文本</em></div><div><span>历史占位值“19”</span><strong>6,003行</strong><em>已统一转换为空值</em></div></div><div className="modal-actions"><button className="button secondary" onClick={() => setValidated(false)}>返回</button><button className="button primary" onClick={() => { notify("4,704个有效运单已进入监控"); onClose(); }}>确认导入有效记录</button></div></div>}
       </section>

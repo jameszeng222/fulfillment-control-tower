@@ -1,100 +1,104 @@
-# vinext-starter
+# 履约雷达 · 物流轨迹预警监控
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+面向物流部与客服部的轻量履约监控 Demo。系统以 ERP 履约数据和 17TRACK 轨迹为事实来源，在保留官方主状态、子状态和完整轨迹的基础上，叠加公司自己的业务预警、处理状态与渠道时效分析。
 
-## Prerequisites
+在线 Demo：[fulfillment-control-tower.zengyun666.chatgpt.site](https://fulfillment-control-tower.zengyun666.chatgpt.site/)
 
-- Node.js `>=22.13.0`
+## 产品范围
 
-## Quick Start
+当前 Demo 包含四个一级页面：
+
+- **数据总览**：监控规模、渠道占比、17TRACK 状态分布、业务预警分布和数据健康概览。
+- **轨迹监控**：团队切换、日期筛选、官方状态/子状态筛选、六类业务预警、运单列表和履约详情。
+- **渠道时效**：渠道、仓库、国家等维度的妥投时效、达成率、稳定性与派送质量分析。
+- **数据与规则**：数据源状态、SLA、业务预警规则、17TRACK 状态字典和数据质量问题。
+
+系统刻意不建设独立工单中心、通知中心、AI 消息识别或索赔模块，重点保持在“监控、预警、分析”。
+
+## 状态设计
+
+同一运单同时保留三层信息：
+
+1. **17TRACK 主状态**：包裹当前所处阶段。
+2. **17TRACK 子状态**：具体节点或异常原因。
+3. **业务预警**：是否需要内部跟进以及归入哪个处理入口。
+
+业务预警不会改写 17TRACK 官方状态。同一运单允许命中多条规则，但列表只展示一行，并通过一个主预警和若干次预警表达。
+
+六个一级业务分类为：
+
+- 履约准备异常
+- 未上网异常
+- 运输异常
+- 派送异常
+- 包裹退运
+- 其他异常
+
+其中延误归入运输异常，清关补资料归入海关卡关，收件人拒收归入派送异常，其他异常仅作为未命中明确规则时的兜底。
+
+## 当前数据说明
+
+当前仓库是可交互的前端 Demo，页面数据和 17TRACK 轨迹均为模拟数据，用于产品评审、需求验证和前后端接口对齐；尚未接入真实 ERP、17TRACK API、UCC 或 TOS。
+
+团队示例包括 LM、FD、LM_TT 和网红团队；发货仓只保留万邑通仓和国内仓，并演示发货仓与 C 端物流商选项联动。
+
+## 本地运行
+
+环境要求：Node.js `>=22.13.0`。
 
 ```bash
 npm install
 npm run dev
+```
+
+默认访问终端中显示的本地地址。
+
+## 质量检查
+
+```bash
+npm run lint
 npm run build
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+`npm test` 会先执行生产构建，再检查首页输出及产品关键配置是否完整。
 
-## Included Shape
+## 项目结构
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+app/
+  page.tsx          页面、交互和 Demo 数据
+  layout.tsx        页面元信息与社交分享配置
+  globals.css       主页面样式
+  overview.css      数据总览样式
+  analysis.css      渠道时效样式
+  layers.css        弹层与辅助区域样式
+docs/
+  物流轨迹预警监控系统_PRD_V1.0.md
+  物流轨迹预警监控系统_PRD_V1.0.docx
+public/
+  og.png            社交分享图
+tests/
+  rendered-html.test.mjs
+worker/
+  index.ts          Cloudflare Worker 入口
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+## 产品文档
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+- [物流轨迹预警监控系统 PRD](docs/物流轨迹预警监控系统_PRD_V1.0.md)
+- [履约轨迹监控需求总结（Battle 版）](docs/履约轨迹监控需求总结_Battle版.md)
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+PRD 当前内部版本为 V1.1；为避免已有引用失效，文件名暂时保留 `V1.0`。
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+## 后续接入建议
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+正式开发时建议按以下顺序推进：
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+1. ERP 履约数据导入与字段校验。
+2. 17TRACK 注册、同步、状态标准化和数据健康监控。
+3. 十条底层预警规则及自动恢复、手动归档。
+4. 真实筛选、分页、导出和履约详情。
+5. 渠道 × 国家 SLA 与时效指标聚合。
 
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+具体字段、接口、规则、验收标准和测试场景见 PRD。
