@@ -45,3 +45,4 @@ main{min-height:100vh;margin-left:224px}.topbar{height:56px;padding:0 26px;borde
 
 .substatus-filter button>span{display:flex;align-items:center;justify-content:space-between;gap:8px}.substatus-filter button>span b{min-width:24px;padding:3px 5px;border-radius:9px;background:#e7ebf1;color:#526077;text-align:center;font-size:7px}.substatus-filter button.active>span b{background:#fff;color:#315bc7}
 .status-grid button.linked{background:#f7f9ff;box-shadow:inset 0 0 0 2px #8aa0e6}.status-grid button.linked:after{content:"预警关联";float:right;margin-top:-16px;padding:3px 5px;border-radius:4px;background:#e8eeff;color:#4562c2;font-size:6px}
+.rule-hit-state{padding:3px 5px;border-radius:9px;font-size:6px;font-weight:600;white-space:nowrap}.rule-hit-state.current{background:#e9f6ef;color:#23805f}.rule-hit-state.history{background:#eef1f5;color:#748094}.current-alert-label{margin-top:4px!important;color:#6f7c90!important}

@@ -66,7 +66,11 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /returning: "returning"/);
   assert.match(page, /const primaryAlert = alerts\[0\]/);
   assert.match(page, /primaryCategory === activeAlert/);
-  assert.match(page, /primaryAlert === ruleFilter/);
+  assert.match(page, /function ruleHitState/);
+  assert.match(page, /order\.alertHistory\?\.some/);
+  assert.match(page, /ruleHitState\(order, ruleFilter\)/);
+  assert.match(page, /当前命中/);
+  assert.match(page, /历史命中/);
   assert.match(page, /全部业务预警/);
   assert.match(page, /aria-label="业务预警"/);
   assert.doesNotMatch(page, /<optgroup/);
