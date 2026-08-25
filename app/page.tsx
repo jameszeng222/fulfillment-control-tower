@@ -184,13 +184,17 @@ const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; c
   { key: "carrier_exception", label: "其他异常", count: 3, hint: "未命中明确规则的异常" },
 ];
 
-const BUSINESS_ALERT_GROUPS: { key: Exclude<AlertFilterKey, "all">; label: string; rules: Exclude<AlertKey, "all">[] }[] = [
-  { key: "fulfillment_preparation", label: "履约准备异常", rules: ["fulfillment_error", "signout_timeout"] },
-  { key: "not_online", label: "未上网异常", rules: ["not_online"] },
-  { key: "transit_exception", label: "运输异常", rules: ["transport_timeout", "no_update", "stagnation", "customs_hold"] },
-  { key: "delivery_failure", label: "派送异常", rules: ["delivery_failure"] },
-  { key: "returning", label: "包裹退运", rules: ["returning"] },
-  { key: "carrier_exception", label: "其他异常", rules: ["carrier_exception"] },
+const BUSINESS_ALERT_RULE_OPTIONS: Exclude<AlertKey, "all">[] = [
+  "fulfillment_error",
+  "signout_timeout",
+  "not_online",
+  "transport_timeout",
+  "no_update",
+  "stagnation",
+  "customs_hold",
+  "delivery_failure",
+  "returning",
+  "carrier_exception",
 ];
 
 const RULE_TO_CATEGORY: Record<Exclude<AlertKey, "all">, Exclude<AlertFilterKey, "all">> = {
@@ -1208,12 +1212,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const rows = useMemo(() => ORDERS.map((order) => archivedIds.includes(order.trackingNo) ? { ...order, monitorState: "archived" as MonitorState } : order).filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
     const alerts = activeAlerts(order);
-    const matchesAlert = activeAlert === "all"
-      || (activeAlert === "fulfillment_preparation" ? false
-        : activeAlert === "transit_exception"
-          ? alerts.some((alert) => alert === "transport_timeout" || alert === "stagnation" || alert === "no_update" || alert === "customs_hold")
-          : alerts.includes(activeAlert));
-    const matchesRule = ruleFilter === "all" || alerts.includes(ruleFilter);
+    const primaryAlert = alerts[0];
+    const primaryCategory = primaryAlert ? RULE_TO_CATEGORY[primaryAlert] : null;
+    const matchesAlert = activeAlert === "all" || primaryCategory === activeAlert;
+    const matchesRule = ruleFilter === "all" || primaryAlert === ruleFilter;
     return (team === "all" || order.team === team)
       && (warehouse === "all" || warehouseKeyOf(order.warehouse) === warehouse)
       && (cEndCarrier === "all" || getCEndCarrier(order) === cEndCarrier)
@@ -1353,9 +1355,9 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
-          <select className="business-alert-filter" value={ruleFilter} onChange={(event) => selectRuleFilter(event.target.value as AlertKey)} aria-label="细分业务预警">
+          <select value={ruleFilter} onChange={(event) => selectRuleFilter(event.target.value as AlertKey)} aria-label="业务预警">
             <option value="all">全部业务预警</option>
-            {BUSINESS_ALERT_GROUPS.map((group) => <optgroup key={group.key} label={group.label}>{group.rules.map((rule) => <option key={rule} value={rule}>{ALERT_META[rule].label} · {filteredAlertCount(ALERT_META[rule].count)}</option>)}</optgroup>)}
+            {BUSINESS_ALERT_RULE_OPTIONS.map((rule) => <option key={rule} value={rule}>{ALERT_META[rule].label}</option>)}
           </select>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={cEndCarrier} disabled={isPreTrackAlert} onChange={(event) => setCEndCarrier(event.target.value)} aria-label="C端物流渠道"><option value="all">{isPreTrackAlert ? "生成运单后筛选C端渠道" : "全部C端渠道"}</option>{availableCEndCarriers.map((item) => <option key={item} value={item}>{item}</option>)}</select>
