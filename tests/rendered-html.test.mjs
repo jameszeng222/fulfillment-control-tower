@@ -58,6 +58,11 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /Exception_Delayed/);
   assert.match(page, /InTransit_CustomsRequiringInformation|CustomsRequiringInformation/);
   assert.match(page, /DeliveryFailure_Rejected|Exception_Rejected/);
+  assert.match(page, /rules: \["transport_timeout", "no_update", "stagnation", "customs_hold"\]/);
+  assert.doesNotMatch(page, /rules: \["transport_timeout"[^\]]*"delivery_failure"/);
+  assert.doesNotMatch(page, /rules: \["transport_timeout"[^\]]*"returning"/);
+  assert.match(page, /全部业务预警/);
+  assert.match(page, /细分业务预警/);
 });
 
 test("项目元信息不再包含脚手架占位内容", async () => {

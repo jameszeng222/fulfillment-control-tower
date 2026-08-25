@@ -184,6 +184,28 @@ const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; c
   { key: "carrier_exception", label: "其他异常", count: 3, hint: "未命中明确规则的异常" },
 ];
 
+const BUSINESS_ALERT_GROUPS: { key: Exclude<AlertFilterKey, "all">; label: string; rules: Exclude<AlertKey, "all">[] }[] = [
+  { key: "fulfillment_preparation", label: "履约准备异常", rules: ["fulfillment_error", "signout_timeout"] },
+  { key: "not_online", label: "未上网异常", rules: ["not_online"] },
+  { key: "transit_exception", label: "运输异常", rules: ["transport_timeout", "no_update", "stagnation", "customs_hold"] },
+  { key: "delivery_failure", label: "派送异常", rules: ["delivery_failure"] },
+  { key: "returning", label: "包裹退运", rules: ["returning"] },
+  { key: "carrier_exception", label: "其他异常", rules: ["carrier_exception"] },
+];
+
+const RULE_TO_CATEGORY: Record<Exclude<AlertKey, "all">, Exclude<AlertFilterKey, "all">> = {
+  fulfillment_error: "fulfillment_preparation",
+  signout_timeout: "fulfillment_preparation",
+  not_online: "not_online",
+  transport_timeout: "transit_exception",
+  no_update: "transit_exception",
+  stagnation: "transit_exception",
+  customs_hold: "transit_exception",
+  delivery_failure: "delivery_failure",
+  returning: "returning",
+  carrier_exception: "carrier_exception",
+};
+
 const ALERT_FOCUS_STATUS: Record<AlertFilterKey, MainStatus> = {
   all: "InTransit",
   fulfillment_preparation: "InfoReceived",
@@ -1157,6 +1179,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [cEndCarrier, setCEndCarrier] = useState("all");
   const [mode, setMode] = useState<"alerts" | "all">("alerts");
   const [activeAlert, setActiveAlert] = useState<AlertFilterKey>("all");
+  const [ruleFilter, setRuleFilter] = useState<AlertKey>("all");
   const [status, setStatus] = useState<MainStatus | "all">("all");
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
@@ -1190,10 +1213,11 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         : activeAlert === "transit_exception"
           ? alerts.some((alert) => alert === "transport_timeout" || alert === "stagnation" || alert === "no_update" || alert === "customs_hold")
           : alerts.includes(activeAlert));
+    const matchesRule = ruleFilter === "all" || alerts.includes(ruleFilter);
     return (team === "all" || order.team === team)
       && (warehouse === "all" || warehouseKeyOf(order.warehouse) === warehouse)
       && (cEndCarrier === "all" || getCEndCarrier(order) === cEndCarrier)
-      && (mode === "all" || (order.monitorState === "active" && matchesAlert))
+      && (mode === "all" ? matchesRule : order.monitorState === "active" && matchesAlert && matchesRule)
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
@@ -1201,13 +1225,14 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, priority, query, status, subStatus, team, warehouse]);
+  }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, priority, query, ruleFilter, status, subStatus, team, warehouse]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "fulfillment_preparation" || activeAlert === "all")
+    && (ruleFilter === "all" || item.kind === ruleFilter)
     && (team === "all" || item.team === team)
     && (warehouse === "all" || warehouseKeyOf(item.warehouse) === warehouse)
     && (priority === "all" || item.severity === priority)
-    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, team, warehouse]);
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, ruleFilter, team, warehouse]);
 
   const teamStats = TEAM_META[team];
   const availableCEndCarriers = C_END_CARRIER_OPTIONS[warehouse];
@@ -1224,9 +1249,19 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
   const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
   const activeFilterMeta = activeAlert === "all" ? null : ALERT_FILTER_META.find((item) => item.key === activeAlert);
+  const selectedRuleMeta = ruleFilter === "all" ? null : ALERT_META[ruleFilter];
 
   function selectAlert(nextAlert: AlertFilterKey) {
     setActiveAlert(nextAlert);
+    setRuleFilter("all");
+    setStatus("all");
+    setSubStatus("all");
+    setSelected([]);
+  }
+
+  function selectRuleFilter(nextRule: AlertKey) {
+    setRuleFilter(nextRule);
+    setActiveAlert(nextRule === "all" ? "all" : RULE_TO_CATEGORY[nextRule]);
     setStatus("all");
     setSubStatus("all");
     setSelected([]);
@@ -1288,14 +1323,14 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         </div>
       </section>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); setRuleFilter("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
 
       {!isPreTrackAlert && <><section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
       </section>
 
       <section className="substatus-filter" aria-label={`${STATUS_META[expandedStatus].label}子状态筛选`}>
-        <div><span>{activeAlert === "all" || status !== "all" ? "子状态筛选 · 默认展开" : `${activeFilterMeta?.label ?? "业务预警"}自动定位`}</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个相关子状态</small></div>
+        <div><span>{activeAlert === "all" || status !== "all" ? "子状态筛选 · 默认展开" : `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "业务预警"}自动定位`}</span><strong>{STATUS_META[expandedStatus].label}</strong><small>{SUB_STATUS_GROUPS[expandedStatus].length}个相关子状态</small></div>
         <button className={subStatus === "all" ? "active" : ""} onClick={() => setSubStatus("all")}><strong>全部</strong><small>不限制子状态</small></button>
         {SUB_STATUS_GROUPS[expandedStatus].map((item) => <button key={item.code} className={subStatus === item.code ? "active" : ""} onClick={() => { setStatus(expandedStatus); setSubStatus(item.code); }}><span><strong>{item.label}</strong><b>{statusCount(item.count).toLocaleString()}</b></span><code>{item.code}</code></button>)}
       </section></>}
@@ -1318,6 +1353,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
           <div className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索运单号、订单号、履约单号" /></div>
+          <select className="business-alert-filter" value={ruleFilter} onChange={(event) => selectRuleFilter(event.target.value as AlertKey)} aria-label="细分业务预警">
+            <option value="all">全部业务预警</option>
+            {BUSINESS_ALERT_GROUPS.map((group) => <optgroup key={group.key} label={group.label}>{group.rules.map((rule) => <option key={rule} value={rule}>{ALERT_META[rule].label} · {filteredAlertCount(ALERT_META[rule].count)}</option>)}</optgroup>)}
+          </select>
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={cEndCarrier} disabled={isPreTrackAlert} onChange={(event) => setCEndCarrier(event.target.value)} aria-label="C端物流渠道"><option value="all">{isPreTrackAlert ? "生成运单后筛选C端渠道" : "全部C端渠道"}</option>{availableCEndCarriers.map((item) => <option key={item} value={item}>{item}</option>)}</select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
@@ -1325,9 +1364,9 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           {mode === "all" && <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)} aria-label="监控生命周期"><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select>}
           {mode === "all" && <select aria-label="同步状态"><option>全部同步状态</option><option>同步正常</option><option>同步失败</option><option>停止跟踪</option></select>}
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
-          <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `异常共 ${activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "全部预警"}共 ${selectedRuleMeta ? filteredAlertCount(selectedRuleMeta.count) : activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : mode === "alerts" ? <>页面只按6个一级分类收口；运输超时、断更、停滞等具体命中规则保留在列表标签和履约单详情中。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；点击运单查看判断依据。</>}</span></div>
+        <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : mode === "alerts" ? <>可通过“业务预警”精确筛选底层规则；运输异常仅包含运输超时、物流断更、物流停滞和海关卡关，明确不包含派送异常与包裹退运。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；业务预警筛选可查询具体规则。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
         {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
         <div className="table-footer"><span>{isPreTrackAlert ? "ERP修复并重试成功后自动恢复 · 生成物流单号后进入17TRACK轨迹监控" : "业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中"}</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
