@@ -178,7 +178,7 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   signout_timeout: { label: "超时未签出", count: 6, hint: "履约单生成 >24小时" },
   fulfillment_error: { label: "履约单报错", count: 3, hint: "ERP建单 / 取号失败" },
   stock_shortage: { label: "商品缺货", count: 5, hint: "ERP库存不足 / 分配失败" },
-  split_order_exception: { label: "拆单异常", count: 3, hint: "拆单失败 / 子履约单缺失" },
+  split_order_exception: { label: "拆单异常", count: 3, hint: "订单分配物流渠道失败" },
 };
 
 const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; count: number; hint: string }[] = [
@@ -254,14 +254,14 @@ const BUSINESS_RULES: BusinessRule[] = [
   { key: "signout_timeout", scope: "全部团队 · 待签出履约单", trigger: "履约单生成后24小时仍未完成仓库签出", trackStatus: "ERP履约单状态 / 签出时间", exclusions: "已取消、人工冻结的履约单", recovery: "ERP回传签出时间后自动恢复", priority: "高", enabled: true },
   { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", keywordMode: "辅助匹配", keywords: "地址错误, 邮编错误, 城市错误, 取号失败", ignoredKeywords: "已取消, 测试订单", enabled: true },
   { key: "stock_shortage", scope: "全部团队 · 待分配库存订单", trigger: "ERP返回可用库存不足、库存分配失败或订单缺货", trackStatus: "ERP库存状态 / 可用库存 / 分配结果 / 缺货SKU", exclusions: "已取消订单、测试订单、预售订单", recovery: "补货、换仓或拆单后库存分配成功；取消或退款后关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "库存不足, 分配失败, 订单缺货, Stock insufficient", ignoredKeywords: "预售, 已取消", enabled: true },
-  { key: "split_order_exception", scope: "全部团队 · 需要拆单的订单", trigger: "ERP拆单失败、子履约单生成不完整或SKU未成功分配至目标仓", trackStatus: "ERP拆单状态 / 子履约单数量 / 仓库分配 / SKU分配结果", exclusions: "无需拆单、已取消订单、测试订单", recovery: "拆单重试成功且全部子履约单生成；人工合单、取消或退款后关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "拆单失败, 子履约单缺失, 仓库分配失败, Split incomplete", ignoredKeywords: "无需拆单, 已取消", enabled: true },
+  { key: "split_order_exception", scope: "全部团队 · 待分配物流渠道订单", trigger: "订单分配物流渠道失败，ERP未能为订单匹配可用物流渠道", trackStatus: "ERP物流渠道分配状态 / 目标仓 / 目的国 / 渠道匹配结果", exclusions: "无需物流配送、已取消订单、测试订单", recovery: "重新分配物流渠道成功并取得物流单号；取消或退款后关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "物流渠道分配失败, 无可用渠道, 渠道匹配失败, Carrier route unavailable", ignoredKeywords: "无需物流配送, 已取消", enabled: true },
 ];
 
 const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
   { id: "PRE-260812-091", kind: "signout_timeout", orderNo: "SO-260812-091", fulfillmentNo: "P26081200091", team: "LM", warehouse: "USKY3-WINIT", createdAt: "2026-08-12 08:16", age: "27小时", errorCode: "WAIT_SIGN_OUT", reason: "履约单已生成，仓库尚未完成签出", severity: "high" },
   { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "NF01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
   { id: "ERR-260813-209", kind: "stock_shortage", reasonTag: "订单缺货", stage: "库存分配失败", orderNo: "SO-260813-209", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 10:24", age: "1小时21分", errorCode: "ERP_STOCK_INSUFFICIENT", reason: "订单缺货：2个SKU可用库存不足，ERP无法分配库存并生成履约单", severity: "critical" },
-  { id: "ERR-260813-287", kind: "split_order_exception", reasonTag: "部分履约单未生成", stage: "拆单未完成", orderNo: "SO-260813-287", fulfillmentNo: "P26081300287-A（部分）", team: "FD", warehouse: "JY01", createdAt: "2026-08-13 09:48", age: "1小时57分", errorCode: "ERP_SPLIT_ORDER_INCOMPLETE", reason: "计划拆分2个履约单，仅成功生成1个，剩余SKU未绑定发货仓", severity: "critical" },
+  { id: "ERR-260813-287", kind: "split_order_exception", reasonTag: "物流渠道未分配", stage: "物流渠道分配失败", orderNo: "SO-260813-287", fulfillmentNo: "P26081300287（待取号）", team: "FD", warehouse: "JY01", createdAt: "2026-08-13 09:48", age: "1小时57分", errorCode: "ERP_LOGISTICS_CHANNEL_ASSIGN_FAILED", reason: "订单未能匹配目的国和目标仓对应的可用物流渠道，无法继续获取物流单号", severity: "critical" },
   { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "INFLUENCER", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
   { id: "ERR-260813-076", kind: "fulfillment_error", orderNo: "SO-260813-076", team: "LM", warehouse: "NF01", createdAt: "2026-08-13 07:51", age: "3小时54分", errorCode: "ERP_CARRIER_LABEL_FAILED", reason: "物流商取号失败，未能获取物流单号", severity: "critical" },
   { id: "ERR-260812-633", kind: "fulfillment_error", orderNo: "SO-260812-633", team: "FD", warehouse: "JY01", createdAt: "2026-08-12 19:28", age: "16小时17分", errorCode: "ERP_CITY_INVALID", reason: "收件城市无法识别，ERP建单校验未通过", severity: "high" },
@@ -1156,8 +1156,8 @@ function ErpAlertTable({ rows, notify }: { rows: ErpPreTrackAlert[]; notify: (te
           <td><strong>{item.orderNo}</strong><small>{item.fulfillmentNo ?? "履约单未生成"}</small></td>
           <td><strong>{TEAM_META[item.team].label}</strong><small>{item.warehouse}</small></td>
           <td><span className="erp-stage">{item.stage ?? (item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败")}</span><code>{item.errorCode}</code></td>
-          <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : item.kind === "stock_shortage" ? "缺货发现时间" : item.kind === "split_order_exception" ? "拆单异常时间" : "ERP报错时间"}</small></td>
-          <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : item.kind === "stock_shortage" ? "等待补货、换仓或拆单" : item.kind === "split_order_exception" ? "等待重试或人工处理" : "等待修复并重试"}</small></td>
+          <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : item.kind === "stock_shortage" ? "缺货发现时间" : item.kind === "split_order_exception" ? "渠道分配失败时间" : "ERP报错时间"}</small></td>
+          <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : item.kind === "stock_shortage" ? "等待补货、换仓或拆单" : item.kind === "split_order_exception" ? "等待重新分配物流渠道" : "等待修复并重试"}</small></td>
           <td><strong>{item.reason}</strong><small>来源：ERP错误中心</small></td>
           <td><button className="erp-link" onClick={() => notify(`${item.orderNo}：已定位到ERP错误详情`)}>查看ERP<ArrowUpRight size={12} /></button></td>
         </tr>)}</tbody>

@@ -64,7 +64,8 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /label: "商品缺货"/);
   assert.match(page, /split_order_exception: "fulfillment_preparation"/);
   assert.match(page, /label: "拆单异常"/);
-  assert.match(page, /ERP_SPLIT_ORDER_INCOMPLETE/);
+  assert.match(page, /订单分配物流渠道失败/);
+  assert.match(page, /ERP_LOGISTICS_CHANNEL_ASSIGN_FAILED/);
   assert.match(page, /12条底层判断规则/);
   assert.match(page, /transport_timeout: "transit_exception"/);
   assert.match(page, /no_update: "transit_exception"/);
