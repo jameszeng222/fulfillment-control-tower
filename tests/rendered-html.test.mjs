@@ -56,6 +56,8 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /万邑通仓/);
   assert.match(page, /国内仓/);
   assert.match(page, /Exception_Delayed/);
+  assert.match(page, /Expired（运输过久）/);
+  assert.match(page, /Exception_Delayed不单独触发超时/);
   assert.match(page, /InTransit_CustomsRequiringInformation|CustomsRequiringInformation/);
   assert.match(page, /DeliveryFailure_Rejected|Exception_Rejected/);
   assert.match(page, /reasonTag: "订单缺货"/);

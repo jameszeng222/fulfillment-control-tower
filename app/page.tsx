@@ -167,7 +167,7 @@ const STATUS_META: Record<MainStatus, { label: string; tone: string; count: numb
 };
 
 const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: number; hint: string }> = {
-  transport_timeout: { label: "运输超时", count: 28, hint: "当前与历史 · 超SLA或官方延误" },
+  transport_timeout: { label: "运输超时", count: 28, hint: "当前与历史 · 超SLA或官方运输过久" },
   stagnation: { label: "物流停滞", count: 27, hint: "有轨迹 · 同地点未移动" },
   customs_hold: { label: "海关卡关", count: 9, hint: "超时停留 / 清关补资料" },
   no_update: { label: "物流断更", count: 18, hint: "完全无新有效轨迹" },
@@ -247,7 +247,7 @@ const BUSINESS_RULES: BusinessRule[] = [
   { key: "no_update", scope: "全部团队 · 运输中包裹", trigger: "最后一条有效轨迹后 >3个工作日完全无新有效轨迹", trackStatus: "InTransit", exclusions: "派送失败、等待自提、同步失败", recovery: "出现任一新的有效轨迹后自动恢复", priority: "高", keywordMode: "辅助匹配", keywords: "Departed, Arrived, Processed, In transit", ignoredKeywords: "Label created, Electronic data received", enabled: true },
   { key: "stagnation", scope: "LM / FD / LM_TT", trigger: "期间仍有轨迹更新，但连续扫描地点未变化 >3个工作日", trackStatus: "InTransit_Arrival / Other", exclusions: "海关节点、同步失败", recovery: "标准化地点或处理节点发生变化", priority: "中", keywordMode: "辅助匹配", keywords: "Arrived at facility, Processing center, Distribution center", ignoredKeywords: "Customs, Clearance", enabled: true },
   { key: "customs_hold", scope: "跨境渠道", trigger: "海关节点停留 >3个工作日，或17TRACK提示清关需要补充资料", trackStatus: "InTransit_CustomsProcessing / CustomsRequiringInformation", exclusions: "已放行、已离开海关节点", recovery: "资料补充完成、清关放行或离开海关节点", priority: "高", keywordMode: "辅助匹配", keywords: "Customs, Clearance, Held by customs, Additional information required", ignoredKeywords: "Released, Cleared", enabled: true },
-  { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "实际或当前运输时长超过承诺时效 +2个工作日，或17TRACK明确标记运输延误", trackStatus: "InTransit / Expired / OutForDelivery / DeliveryFailure / Returning / Delivered", exclusions: "渠道SLA缺失、订单取消、测试订单", recovery: "签收、退运或人工归档后退出当前待办；超时命中事实继续用于履约和渠道分析", priority: "高", enabled: true },
+  { key: "transport_timeout", scope: "按渠道 × 国家SLA", trigger: "实际或当前运输时长超过承诺时效 +2个工作日，或17TRACK主状态明确为Expired（运输过久）", trackStatus: "Expired（官方运输过久） / InTransit等状态（按渠道SLA计算）", exclusions: "渠道SLA缺失、订单取消、测试订单；Exception_Delayed不单独触发超时", recovery: "签收、退运或人工归档后退出当前待办；超时命中事实继续用于履约和渠道分析", priority: "高", enabled: true },
   { key: "delivery_failure", scope: "全部末端派送渠道", trigger: "派送失败、等待自提或收件人拒收", trackStatus: "DeliveryFailure / AvailableForPickup / Exception_Rejected", exclusions: "已签收", recovery: "重新派送、客户确认、自提、签收或人工解决", priority: "紧急", keywordMode: "辅助匹配", keywords: "Delivery attempted, Invalid address, No recipient, Rejected, Refused", ignoredKeywords: "Delivered", enabled: true },
   { key: "returning", scope: "全部团队 · 全部渠道", trigger: "17TRACK识别包裹退运", trackStatus: "Exception_Returning", exclusions: "无", recovery: "退运完成或人工关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Return to sender, Returning", ignoredKeywords: "Return completed", enabled: true },
   { key: "carrier_exception", scope: "全部团队 · 全部渠道", trigger: "17TRACK异常无法归入运输、卡关、派送或退运等明确业务规则", trackStatus: "Exception_Lost / Damage / Destroyed / Security / Cancel / Other", exclusions: "延误、退运、拒收、派送失败及清关补资料等已明确分类", recovery: "出现恢复运输、签收结果或人工确认关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Lost, Damaged, Destroyed, Security, Cancelled, Other", ignoredKeywords: "Delayed, Rejected, Customs, Delivered, Returning", enabled: true },
@@ -995,14 +995,14 @@ const ORDERS: Order[] = [
     monitorState: "active",
     syncStatus: "success",
     syncAt: "08-13 11:45",
-    evidence: "17TRACK明确标记Exception_Delayed，直接归入运输异常；同时超过渠道SLA时由同一运输超时规则合并说明。",
+    evidence: "17TRACK的Exception_Delayed仅作为运输延误事实保留；该单因实际运输时长超过渠道SLA +2个工作日，才触发运输超时。",
     shippedAt: "2026-08-06 07:42",
     elapsed: "7天 4小时",
     abnormalAge: "延误 2天 1小时",
     latestTrack: "Delivery delayed due to carrier operations",
     latestAt: "08-11 10:06",
     sla: "5工作日 +2",
-    events: [...baseEvents, { time: "2026-08-11 10:06", title: "Exception_Delayed · 渠道运输延误", detail: "官方延误状态与超过SLA的判断统一归入运输异常", location: "Denver, CO", source: "17TRACK", state: "warning" }],
+    events: [...baseEvents, { time: "2026-08-11 10:06", title: "Exception_Delayed · 渠道运输延误", detail: "延误状态本身不触发运输超时；本单另因超过渠道SLA +2个工作日命中超时规则", location: "Denver, CO", source: "17TRACK", state: "warning" }],
   },
 ];
 
