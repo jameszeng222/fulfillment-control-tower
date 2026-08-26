@@ -58,6 +58,8 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /Exception_Delayed/);
   assert.match(page, /InTransit_CustomsRequiringInformation|CustomsRequiringInformation/);
   assert.match(page, /DeliveryFailure_Rejected|Exception_Rejected/);
+  assert.match(page, /reasonTag: "订单缺货"/);
+  assert.match(page, /ERP_STOCK_INSUFFICIENT/);
   assert.match(page, /transport_timeout: "transit_exception"/);
   assert.match(page, /no_update: "transit_exception"/);
   assert.match(page, /stagnation: "transit_exception"/);

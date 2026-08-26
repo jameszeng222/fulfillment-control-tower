@@ -87,6 +87,8 @@ type BusinessRule = {
 type ErpPreTrackAlert = {
   id: string;
   kind: "signout_timeout" | "fulfillment_error";
+  reasonTag?: string;
+  stage?: string;
   orderNo: string;
   fulfillmentNo?: string;
   team: Exclude<TeamKey, "all">;
@@ -246,6 +248,7 @@ const BUSINESS_RULES: BusinessRule[] = [
 const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
   { id: "PRE-260812-091", kind: "signout_timeout", orderNo: "SO-260812-091", fulfillmentNo: "P26081200091", team: "LM", warehouse: "USKY3-WINIT", createdAt: "2026-08-12 08:16", age: "27小时", errorCode: "WAIT_SIGN_OUT", reason: "履约单已生成，仓库尚未完成签出", severity: "high" },
   { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "NF01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
+  { id: "ERR-260813-209", kind: "fulfillment_error", reasonTag: "订单缺货", stage: "库存分配失败", orderNo: "SO-260813-209", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 10:24", age: "1小时21分", errorCode: "ERP_STOCK_INSUFFICIENT", reason: "订单缺货：2个SKU可用库存不足，ERP无法分配库存并生成履约单", severity: "critical" },
   { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "INFLUENCER", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
   { id: "ERR-260813-076", kind: "fulfillment_error", orderNo: "SO-260813-076", team: "LM", warehouse: "NF01", createdAt: "2026-08-13 07:51", age: "3小时54分", errorCode: "ERP_CARRIER_LABEL_FAILED", reason: "物流商取号失败，未能获取物流单号", severity: "critical" },
   { id: "ERR-260812-633", kind: "fulfillment_error", orderNo: "SO-260812-633", team: "FD", warehouse: "JY01", createdAt: "2026-08-12 19:28", age: "16小时17分", errorCode: "ERP_CITY_INVALID", reason: "收件城市无法识别，ERP建单校验未通过", severity: "high" },
@@ -1136,10 +1139,10 @@ function ErpAlertTable({ rows, notify }: { rows: ErpPreTrackAlert[]; notify: (te
       <table className="erp-alert-table">
         <thead><tr><th>业务预警</th><th>订单号 / 履约单号</th><th>团队 / 仓库</th><th>ERP处理阶段</th><th>创建时间</th><th>已等待</th><th>ERP错误或阻塞原因</th><th /></tr></thead>
         <tbody>{rows.map((item) => <tr key={item.id}>
-          <td><AlertBadge alert={item.kind} /><small className={`risk ${item.severity}`}>{item.severity === "critical" ? "紧急" : "高"}</small></td>
+          <td><AlertBadge alert={item.kind} />{item.reasonTag && <small>{item.reasonTag}</small>}<small className={`risk ${item.severity}`}>{item.severity === "critical" ? "紧急" : "高"}</small></td>
           <td><strong>{item.orderNo}</strong><small>{item.fulfillmentNo ?? "履约单未生成"}</small></td>
           <td><strong>{TEAM_META[item.team].label}</strong><small>{item.warehouse}</small></td>
-          <td><span className="erp-stage">{item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败"}</span><code>{item.errorCode}</code></td>
+          <td><span className="erp-stage">{item.stage ?? (item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败")}</span><code>{item.errorCode}</code></td>
           <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : "ERP报错时间"}</small></td>
           <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : "等待修复并重试"}</small></td>
           <td><strong>{item.reason}</strong><small>来源：ERP错误中心</small></td>
