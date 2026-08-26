@@ -79,6 +79,8 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /primaryCategory === activeAlert/);
   assert.match(page, /function ruleHitState/);
   assert.match(page, /order\.alertHistory\?\.some/);
+  assert.match(page, /order\.alertHistory\?\.length \? order\.alertHistory\.map/);
+  assert.match(page, /alert-history-empty/);
   assert.match(page, /ruleHitState\(order, ruleFilter\)/);
   assert.match(page, /当前命中/);
   assert.match(page, /历史命中/);
