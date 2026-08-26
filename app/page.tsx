@@ -59,7 +59,8 @@ type AlertKey =
   | "returning"
   | "carrier_exception"
   | "signout_timeout"
-  | "fulfillment_error";
+  | "fulfillment_error"
+  | "stock_shortage";
 type AlertFilterKey = AlertKey | "transit_exception" | "fulfillment_preparation";
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
@@ -86,7 +87,7 @@ type BusinessRule = {
 
 type ErpPreTrackAlert = {
   id: string;
-  kind: "signout_timeout" | "fulfillment_error";
+  kind: "signout_timeout" | "fulfillment_error" | "stock_shortage";
   reasonTag?: string;
   stage?: string;
   orderNo: string;
@@ -174,7 +175,8 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   returning: { label: "包裹退运", count: 8, hint: "Exception_Returning" },
   carrier_exception: { label: "其他异常", count: 3, hint: "丢失 / 破损 / 销毁等兜底" },
   signout_timeout: { label: "超时未签出", count: 6, hint: "履约单生成 >24小时" },
-  fulfillment_error: { label: "履约单报错", count: 11, hint: "ERP建单 / 取号失败" },
+  fulfillment_error: { label: "履约单报错", count: 6, hint: "ERP建单 / 取号失败" },
+  stock_shortage: { label: "商品缺货", count: 5, hint: "ERP库存不足 / 分配失败" },
 };
 
 const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; count: number; hint: string }[] = [
@@ -188,6 +190,7 @@ const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; c
 
 const BUSINESS_ALERT_RULE_OPTIONS: Exclude<AlertKey, "all">[] = [
   "fulfillment_error",
+  "stock_shortage",
   "signout_timeout",
   "not_online",
   "transport_timeout",
@@ -201,6 +204,7 @@ const BUSINESS_ALERT_RULE_OPTIONS: Exclude<AlertKey, "all">[] = [
 
 const RULE_TO_CATEGORY: Record<Exclude<AlertKey, "all">, Exclude<AlertFilterKey, "all">> = {
   fulfillment_error: "fulfillment_preparation",
+  stock_shortage: "fulfillment_preparation",
   signout_timeout: "fulfillment_preparation",
   not_online: "not_online",
   transport_timeout: "transit_exception",
@@ -226,10 +230,11 @@ const ALERT_FOCUS_STATUS: Record<AlertFilterKey, MainStatus> = {
   carrier_exception: "Exception",
   signout_timeout: "InfoReceived",
   fulfillment_error: "NotFound",
+  stock_shortage: "NotFound",
 };
 
 const ALERT_PRIORITY: Exclude<AlertKey, "all">[] = [
-  "fulfillment_error", "signout_timeout", "returning", "carrier_exception", "delivery_failure", "customs_hold", "no_update", "stagnation", "not_online", "transport_timeout",
+  "fulfillment_error", "stock_shortage", "signout_timeout", "returning", "carrier_exception", "delivery_failure", "customs_hold", "no_update", "stagnation", "not_online", "transport_timeout",
 ];
 
 const BUSINESS_RULES: BusinessRule[] = [
@@ -243,12 +248,13 @@ const BUSINESS_RULES: BusinessRule[] = [
   { key: "carrier_exception", scope: "全部团队 · 全部渠道", trigger: "17TRACK异常无法归入运输、卡关、派送或退运等明确业务规则", trackStatus: "Exception_Lost / Damage / Destroyed / Security / Cancel / Other", exclusions: "延误、退运、拒收、派送失败及清关补资料等已明确分类", recovery: "出现恢复运输、签收结果或人工确认关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "Lost, Damaged, Destroyed, Security, Cancelled, Other", ignoredKeywords: "Delayed, Rejected, Customs, Delivered, Returning", enabled: true },
   { key: "signout_timeout", scope: "全部团队 · 待签出履约单", trigger: "履约单生成后24小时仍未完成仓库签出", trackStatus: "ERP履约单状态 / 签出时间", exclusions: "已取消、人工冻结的履约单", recovery: "ERP回传签出时间后自动恢复", priority: "高", enabled: true },
   { key: "fulfillment_error", scope: "全部团队 · ERP建单任务", trigger: "ERP建单或物流取号返回错误", trackStatus: "ERP错误码 / 城市 / 地址 / 邮编 / 取号结果", exclusions: "已取消订单、测试订单", recovery: "ERP重试成功并生成履约单", priority: "紧急", keywordMode: "辅助匹配", keywords: "地址错误, 邮编错误, 城市错误, 取号失败", ignoredKeywords: "已取消, 测试订单", enabled: true },
+  { key: "stock_shortage", scope: "全部团队 · 待分配库存订单", trigger: "ERP返回可用库存不足、库存分配失败或订单缺货", trackStatus: "ERP库存状态 / 可用库存 / 分配结果 / 缺货SKU", exclusions: "已取消订单、测试订单、预售订单", recovery: "补货、换仓或拆单后库存分配成功；取消或退款后关闭", priority: "紧急", keywordMode: "辅助匹配", keywords: "库存不足, 分配失败, 订单缺货, Stock insufficient", ignoredKeywords: "预售, 已取消", enabled: true },
 ];
 
 const ERP_PRETRACK_ALERTS: ErpPreTrackAlert[] = [
   { id: "PRE-260812-091", kind: "signout_timeout", orderNo: "SO-260812-091", fulfillmentNo: "P26081200091", team: "LM", warehouse: "USKY3-WINIT", createdAt: "2026-08-12 08:16", age: "27小时", errorCode: "WAIT_SIGN_OUT", reason: "履约单已生成，仓库尚未完成签出", severity: "high" },
   { id: "PRE-260811-407", kind: "signout_timeout", orderNo: "SO-260811-407", fulfillmentNo: "P26081100407", team: "FD", warehouse: "NF01", createdAt: "2026-08-11 13:42", age: "45小时", errorCode: "WAIT_SIGN_OUT", reason: "库存已分配，等待仓库扫描出库", severity: "critical" },
-  { id: "ERR-260813-209", kind: "fulfillment_error", reasonTag: "订单缺货", stage: "库存分配失败", orderNo: "SO-260813-209", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 10:24", age: "1小时21分", errorCode: "ERP_STOCK_INSUFFICIENT", reason: "订单缺货：2个SKU可用库存不足，ERP无法分配库存并生成履约单", severity: "critical" },
+  { id: "ERR-260813-209", kind: "stock_shortage", reasonTag: "订单缺货", stage: "库存分配失败", orderNo: "SO-260813-209", team: "LM_TT", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 10:24", age: "1小时21分", errorCode: "ERP_STOCK_INSUFFICIENT", reason: "订单缺货：2个SKU可用库存不足，ERP无法分配库存并生成履约单", severity: "critical" },
   { id: "ERR-260813-118", kind: "fulfillment_error", orderNo: "SO-260813-118", team: "INFLUENCER", warehouse: "USKY3-WINIT", createdAt: "2026-08-13 09:06", age: "2小时39分", errorCode: "ERP_ADDRESS_ZIP_MISMATCH", reason: "城市与邮编不匹配，ERP无法生成履约单", severity: "critical" },
   { id: "ERR-260813-076", kind: "fulfillment_error", orderNo: "SO-260813-076", team: "LM", warehouse: "NF01", createdAt: "2026-08-13 07:51", age: "3小时54分", errorCode: "ERP_CARRIER_LABEL_FAILED", reason: "物流商取号失败，未能获取物流单号", severity: "critical" },
   { id: "ERR-260812-633", kind: "fulfillment_error", orderNo: "SO-260812-633", team: "FD", warehouse: "JY01", createdAt: "2026-08-12 19:28", age: "16小时17分", errorCode: "ERP_CITY_INVALID", reason: "收件城市无法识别，ERP建单校验未通过", severity: "high" },
@@ -1143,8 +1149,8 @@ function ErpAlertTable({ rows, notify }: { rows: ErpPreTrackAlert[]; notify: (te
           <td><strong>{item.orderNo}</strong><small>{item.fulfillmentNo ?? "履约单未生成"}</small></td>
           <td><strong>{TEAM_META[item.team].label}</strong><small>{item.warehouse}</small></td>
           <td><span className="erp-stage">{item.stage ?? (item.kind === "signout_timeout" ? "等待仓库签出" : "ERP建单失败")}</span><code>{item.errorCode}</code></td>
-          <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : "ERP报错时间"}</small></td>
-          <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : "等待修复并重试"}</small></td>
+          <td><strong>{item.createdAt}</strong><small>{item.kind === "signout_timeout" ? "履约单生成时间" : item.kind === "stock_shortage" ? "缺货发现时间" : "ERP报错时间"}</small></td>
+          <td><strong className="erp-age">{item.age}</strong><small>{item.kind === "signout_timeout" ? "超过24小时开始预警" : item.kind === "stock_shortage" ? "等待补货、换仓或拆单" : "等待修复并重试"}</small></td>
           <td><strong>{item.reason}</strong><small>来源：ERP错误中心</small></td>
           <td><button className="erp-link" onClick={() => notify(`${item.orderNo}：已定位到ERP错误详情`)}>查看ERP<ArrowUpRight size={12} /></button></td>
         </tr>)}</tbody>
@@ -1277,7 +1283,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
   function selectRuleFilter(nextRule: AlertKey) {
     setRuleFilter(nextRule);
-    if (nextRule === "fulfillment_error" || nextRule === "signout_timeout") setActiveAlert("fulfillment_preparation");
+    if (nextRule === "fulfillment_error" || nextRule === "stock_shortage" || nextRule === "signout_timeout") setActiveAlert("fulfillment_preparation");
     else if (activeAlert === "fulfillment_preparation") setActiveAlert("all");
     setStatus("all");
     setSubStatus("all");
@@ -1340,7 +1346,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         </div>
       </section>
 
-      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); if (ruleFilter === "fulfillment_error" || ruleFilter === "signout_timeout") setRuleFilter("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
+      <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); if (ruleFilter === "fulfillment_error" || ruleFilter === "stock_shortage" || ruleFilter === "signout_timeout") setRuleFilter("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
 
       {!isPreTrackAlert && <><section className="status-grid compact-status">
         {(Object.entries(STATUS_META) as [MainStatus, typeof STATUS_META[MainStatus]][]).map(([key, meta]) => <button key={key} className={`${status === key ? "active " : ""}${status === "all" && activeAlert !== "all" && expandedStatus === key ? "linked " : ""}${meta.tone}`} onClick={() => { const next = status === key ? "all" : key; setStatus(next); setSubStatus("all"); }}><span><i />{meta.label}</span><strong>{statusCount(meta.count).toLocaleString()}</strong><small>{key}</small></button>)}
@@ -1444,7 +1450,7 @@ function Settings({ onImport, notify }: { onImport: () => void; notify: (text: s
   const [tab, setTab] = useState<"business" | "data" | "sla" | "statuses">("business");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("10条底层判断规则已发布，并汇总为6个一级分类")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("11条底层判断规则已发布，并汇总为6个一级分类")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
       <div className="settings-tabs"><button className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}><Radar size={15} />业务预警规则</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button></div>
       {tab === "business" ? <BusinessRules notify={notify} /> : tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
     </>
@@ -1455,7 +1461,7 @@ function BusinessRules({ notify }: { notify: (text: string) => void }) {
   const [rules, setRules] = useState(BUSINESS_RULES);
   const [editing, setEditing] = useState<Exclude<AlertKey, "all"> | null>(null);
   const rule = editing ? rules.find((item) => item.key === editing) : null;
-  const isErpRule = rule?.key === "signout_timeout" || rule?.key === "fulfillment_error";
+  const isErpRule = rule?.key === "signout_timeout" || rule?.key === "fulfillment_error" || rule?.key === "stock_shortage";
 
   function toggleRule(key: Exclude<AlertKey, "all">) {
     setRules((current) => current.map((item) => item.key === key ? { ...item, enabled: !item.enabled } : item));
