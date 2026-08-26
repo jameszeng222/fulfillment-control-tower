@@ -62,7 +62,10 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /ERP_STOCK_INSUFFICIENT/);
   assert.match(page, /stock_shortage: "fulfillment_preparation"/);
   assert.match(page, /label: "商品缺货"/);
-  assert.match(page, /11条底层判断规则/);
+  assert.match(page, /split_order_exception: "fulfillment_preparation"/);
+  assert.match(page, /label: "拆单异常"/);
+  assert.match(page, /ERP_SPLIT_ORDER_INCOMPLETE/);
+  assert.match(page, /12条底层判断规则/);
   assert.match(page, /transport_timeout: "transit_exception"/);
   assert.match(page, /no_update: "transit_exception"/);
   assert.match(page, /stagnation: "transit_exception"/);
