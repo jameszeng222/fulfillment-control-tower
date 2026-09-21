@@ -3,6 +3,7 @@ import "./globals.css";
 import "./analysis.css";
 import "./overview.css";
 import "./layers.css";
+import "./readability.css";
 
 export const metadata: Metadata = {
   title: "履约雷达 · 物流轨迹预警监控",

@@ -96,19 +96,30 @@ test("核心监控范围和异常路由配置完整", async () => {
     assert.match(page, new RegExp(`<dt>${milestone}<\\/dt>`));
   }
   assert.match(page, /function getOrderMilestones/);
+  assert.match(page, /monitorLayer.*business.*track/);
+  assert.match(page, /监控履约单/);
+  assert.match(page, /异常履约单/);
+  assert.match(page, /同一履约单可命中多条/);
+  assert.match(page, /OMS \+ ERP \+ WMS \+ 17TRACK/);
+  assert.match(page, /function getCurrentNode/);
+  assert.match(page, /function getFulfillmentTimeline/);
   assert.doesNotMatch(page, /<optgroup/);
   assert.doesNotMatch(page, /ALERT_META\[rule\]\.label} ·/);
 });
 
 test("项目元信息不再包含脚手架占位内容", async () => {
-  const [packageJson, readme, layout] = await Promise.all([
+  const [packageJson, readme, layout, readability] = await Promise.all([
     readFile(new URL("package.json", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
+    readFile(new URL("app/readability.css", root), "utf8"),
   ]);
 
   assert.equal(JSON.parse(packageJson).name, "fulfillment-control-tower");
   assert.match(readme, /^# 履约雷达 · 物流轨迹预警监控/m);
   assert.match(layout, /履约雷达 · 物流轨迹预警监控/);
+  assert.match(layout, /readability\.css/);
+  assert.match(readability, /\.data-table td\{[^}]*font-size:14px/);
+  assert.match(readability, /\.page-header p\{[^}]*font-size:15px/);
   assert.doesNotMatch(`${packageJson}\n${readme}`, /site-creator-vinext-starter/);
 });
