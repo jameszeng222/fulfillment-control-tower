@@ -90,6 +90,12 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /历史命中/);
   assert.match(page, /全部业务预警/);
   assert.match(page, /aria-label="业务预警"/);
+  assert.match(page, /aria-label="监控范围筛选"/);
+  assert.match(page, /<th>关键时间<\/th>/);
+  for (const milestone of ["支付", "创建", "出库", "上网", "派送"]) {
+    assert.match(page, new RegExp(`<dt>${milestone}<\\/dt>`));
+  }
+  assert.match(page, /function getOrderMilestones/);
   assert.doesNotMatch(page, /<optgroup/);
   assert.doesNotMatch(page, /ALERT_META\[rule\]\.label} ·/);
 });

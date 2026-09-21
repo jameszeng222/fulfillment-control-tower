@@ -1064,6 +1064,21 @@ function getDeliveredAt(order: Order) {
   return deliveredEvent?.time ?? "未签收";
 }
 
+function getOrderMilestones(order: Order) {
+  const shippedAt = new Date(order.shippedAt.replace(" ", "T")).getTime();
+  const isAfterOutbound = (event: TrackEvent) => new Date(event.time.replace(" ", "T")).getTime() >= shippedAt;
+  const onlineEvent = order.events.find((event) => event.source === "17TRACK" && isAfterOutbound(event) && /InTransit_PickedUp|Picked.?up|已揽收|承运商揽收|Accepted|Collected/i.test(event.title));
+  const deliveryEvent = order.events.find((event) => event.source === "17TRACK" && isAfterOutbound(event) && /OutForDelivery|派送途中|正在派送|派送中/i.test(event.title));
+
+  return {
+    payment: order.paymentAt ?? shiftDateTime(order.shippedAt, -36),
+    created: order.fulfillmentCreatedAt ?? shiftDateTime(order.shippedAt, -18),
+    outbound: order.shippedAt || "—",
+    online: onlineEvent?.time ?? (order.subStatus === "InTransit_PickedUp" ? order.latestAt : "—"),
+    delivery: deliveryEvent?.time ?? (order.status === "OutForDelivery" ? order.latestAt : "—"),
+  };
+}
+
 function getCEndCarrier(order: Order) {
   if (order.cEndCarrier) return order.cEndCarrier;
   const channelMapping: Record<string, string> = {
@@ -1108,6 +1123,7 @@ function OrderTable({ rows, selectedRule, selected, onToggle, onToggleAll, onOpe
             <th>业务预警</th>
             <th>履约单 / 订单</th>
             <th>运单号</th>
+            <th>关键时间</th>
             <th>17TRACK主 / 子状态</th>
             <th>渠道 / 国家</th>
             <th>监控生命周期</th>
@@ -1117,7 +1133,7 @@ function OrderTable({ rows, selectedRule, selected, onToggle, onToggleAll, onOpe
           </tr>
         </thead>
         <tbody>
-          {rows.map((order) => { const alerts = activeAlerts(order); const selectedHit = selectedRule === "all" ? null : ruleHitState(order, selectedRule); return (
+          {rows.map((order) => { const alerts = activeAlerts(order); const selectedHit = selectedRule === "all" ? null : ruleHitState(order, selectedRule); const milestones = getOrderMilestones(order); return (
             <tr key={`${order.trackingNo}-${order.carrier}`} onClick={() => onOpen(order)}>
               <td className="select-cell" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择运单 ${order.trackingNo}`} checked={selected.includes(order.trackingNo)} onChange={() => onToggle(order.trackingNo)} /></td>
               <td>{selectedRule !== "all" && selectedHit ? <><div className="alert-line"><AlertBadge alert={selectedRule} /><span className={`rule-hit-state ${selectedHit}`}>{selectedHit === "current" ? "当前命中" : "历史命中"}</span></div><small className="current-alert-label">{alerts[0] ? `当前分类：${ALERT_META[alerts[0]].label}` : `当前结果：${STATUS_META[order.status].label}`}</small>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : alerts.length ? <><div className="alert-line"><AlertBadge alert={alerts[0]} />{alerts.length > 1 ? <span className="more-alerts">+{alerts.length - 1}</span> : null}</div>{order.severity && <small className={`risk ${order.severity}`}>{order.severity === "critical" ? "紧急" : order.severity === "high" ? "高" : "中"}</small>}</> : <span className="no-alert"><CheckCircle2 size={12} />无实时预警</span>}{order.tags?.length ? <div className="business-tags">{order.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</td>
@@ -1128,6 +1144,13 @@ function OrderTable({ rows, selectedRule, selected, onToggle, onToggleAll, onOpe
                 </a>
                 <small>{order.carrier}</small>
               </td>
+              <td className="key-times"><dl>
+                <div><dt>支付</dt><dd>{milestones.payment}</dd></div>
+                <div><dt>创建</dt><dd>{milestones.created}</dd></div>
+                <div><dt>出库</dt><dd>{milestones.outbound}</dd></div>
+                <div><dt>上网</dt><dd>{milestones.online}</dd></div>
+                <div><dt>派送</dt><dd>{milestones.delivery}</dd></div>
+              </dl></td>
               <td><TrackStatusPair status={order.status} subStatus={order.subStatus} /></td>
               <td><strong>{order.channel}</strong><small>{order.country} · {order.warehouse}</small></td>
               <td><MonitorBadge state={order.monitorState} /><small>{order.abnormalAge} · 运输 {order.elapsed}</small></td>
@@ -1318,33 +1341,14 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
         actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
       />
 
-      <section className="date-filter" aria-label="签出日期筛选">
-        <div className="date-filter-title"><CalendarDays size={15} /><span><strong>签出日期</strong><small>当前：{rangeLabel}</small></span></div>
-        <div className="date-presets">{DATE_RANGE_META.map((item) => <button key={item.key} className={dateRange === item.key ? "active" : ""} onClick={() => setDateRange(item.key)}>{item.label}</button>)}</div>
-        {dateRange === "custom" && <div className="custom-date"><input type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} aria-label="开始日期" /><span>至</span><input type="date" value={customEnd} min={customStart} onChange={(event) => setCustomEnd(event.target.value)} aria-label="结束日期" /></div>}
-      </section>
-
-      <section className="team-monitor" aria-label="团队监控切换">
-        <div className="team-monitor-title"><span><Radar size={17} /></span><div><strong>团队监控</strong><small>一键切换后，页面内全部预警数字与运单明细同步更新</small></div></div>
-        <div className="team-switcher">
-          {(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => (
-            <button key={key} className={team === key ? "active" : ""} aria-pressed={team === key} onClick={() => setTeam(key)}>
-              <span><i />{item.label}</span><strong>{scale(item.alerts)}</strong><small>预警 · {scale(item.monitored).toLocaleString()}单</small>
-            </button>
-          ))}
+      <section className="monitor-scope" aria-label="监控范围筛选">
+        <div className="scope-head"><span><SlidersHorizontal size={16} /></span><div><strong>监控范围</strong><small>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</small></div></div>
+        <div className="scope-controls">
+          <div className="scope-control"><label><CalendarDays size={12} />签出</label><div className="scope-chips date-chips">{DATE_RANGE_META.map((item) => <button key={item.key} className={dateRange === item.key ? "active" : ""} onClick={() => setDateRange(item.key)}>{item.label}</button>)}</div></div>
+          <div className="scope-control"><label><Radar size={12} />团队</label><div className="scope-chips team-chips">{(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => <button key={key} className={team === key ? "active" : ""} aria-pressed={team === key} onClick={() => { setTeam(key); setSelected([]); }}><span>{item.label}</span><b>{scale(item.alerts)}</b></button>)}</div></div>
+          <div className="scope-control"><label><MapPin size={12} />发货仓</label><div className="scope-chips warehouse-chips">{(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setCEndCarrier("all"); setSelected([]); }}><span>{item.label}</span><b>{warehouseOptionCount(item.monitored).toLocaleString()}</b></button>)}</div></div>
         </div>
-        <div className="team-current"><span>当前范围</span><strong>{teamStats.label}</strong><small>{teamStats.description}</small></div>
-      </section>
-
-      <section className="warehouse-switch" aria-label="发货仓筛选">
-        <div className="warehouse-switch-title"><MapPin size={15} /><span><strong>发货仓</strong><small>预警与运单同步筛选</small></span></div>
-        <div className="warehouse-options">
-          {(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => (
-            <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setCEndCarrier("all"); setSelected([]); }}>
-              <strong>{item.label}</strong><small>{item.codes}</small><b>{warehouseOptionCount(item.monitored).toLocaleString()}</b>
-            </button>
-          ))}
-        </div>
+        {dateRange === "custom" && <div className="scope-custom-date"><span>自定义签出日期</span><input type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} aria-label="开始日期" /><i>至</i><input type="date" value={customEnd} min={customStart} onChange={(event) => setCustomEnd(event.target.value)} aria-label="结束日期" /></div>}
       </section>
 
       <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={14} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); if (ruleFilter === "fulfillment_error" || ruleFilter === "stock_shortage" || ruleFilter === "split_order_exception" || ruleFilter === "signout_timeout") setRuleFilter("all"); setSelected([]); }}><PackageSearch size={14} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button><span>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</span></div>
