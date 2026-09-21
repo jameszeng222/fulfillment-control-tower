@@ -97,9 +97,11 @@ test("核心监控范围和异常路由配置完整", async () => {
   }
   assert.match(page, /function getOrderMilestones/);
   assert.match(page, /monitorLayer.*business.*track/);
-  assert.match(page, /监控履约单/);
-  assert.match(page, /异常履约单/);
-  assert.match(page, /同一履约单可命中多条/);
+  assert.match(page, /monitor-compact-bar/);
+  assert.match(page, /scope-query-button/);
+  assert.match(page, /签出日期/);
+  assert.match(page, /17TRACK状态/);
+  assert.doesNotMatch(page, /alert-total-card/);
   assert.match(page, /OMS \+ ERP \+ WMS \+ 17TRACK/);
   assert.match(page, /function getCurrentNode/);
   assert.match(page, /function getFulfillmentTimeline/);

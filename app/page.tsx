@@ -1327,7 +1327,6 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const dateFactor = dateRange === "custom" ? Math.min(3, customDays / 30) : DATE_RANGE_META.find((item) => item.key === dateRange)?.factor ?? 1;
   const warehouseFactor = WAREHOUSE_META[warehouse].monitored / WAREHOUSE_META.all.monitored;
   const scale = (value: number) => Math.max(0, Math.round(value * dateFactor * warehouseFactor));
-  const warehouseOptionCount = (value: number) => Math.max(0, Math.round(value * dateFactor * teamStats.monitored / TEAM_META.all.monitored));
   const scopedStats = { monitored: scale(teamStats.monitored), alerts: scale(teamStats.alerts), todayNew: scale(teamStats.todayNew), recovered: scale(teamStats.recovered) };
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
@@ -1337,7 +1336,6 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
   const activeFilterMeta = activeAlert === "all" ? null : ALERT_META[activeAlert];
   const selectedRuleMeta = ruleFilter === "all" ? null : ALERT_META[ruleFilter];
-  const abnormalOrderCount = Math.max(0, Math.round(scopedStats.alerts * 0.88));
 
   function selectAlert(nextAlert: AlertFilterKey) {
     setMonitorLayer("business");
@@ -1385,23 +1383,26 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       />
 
       <section className="monitor-scope" aria-label="监控范围筛选">
-        <div className="scope-head"><span><SlidersHorizontal size={16} /></span><div><strong>监控范围</strong><small>{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel}</small></div></div>
-        <div className="scope-controls">
-          <div className="scope-control"><label><CalendarDays size={12} />签出</label><div className="scope-chips date-chips">{DATE_RANGE_META.map((item) => <button key={item.key} className={dateRange === item.key ? "active" : ""} onClick={() => setDateRange(item.key)}>{item.label}</button>)}</div></div>
-          <div className="scope-control"><label><Radar size={12} />团队</label><div className="scope-chips team-chips">{(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => <button key={key} className={team === key ? "active" : ""} aria-pressed={team === key} onClick={() => { setTeam(key); setSelected([]); }}><span>{item.label}</span><b>{scale(item.alerts)}</b></button>)}</div></div>
-          <div className="scope-control"><label><MapPin size={12} />发货仓</label><div className="scope-chips warehouse-chips">{(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => <button key={key} className={warehouse === key ? "active" : ""} aria-pressed={warehouse === key} onClick={() => { setWarehouse(key); setCEndCarrier("all"); setSelected([]); }}><span>{item.label}</span><b>{warehouseOptionCount(item.monitored).toLocaleString()}</b></button>)}</div></div>
-        </div>
+        <label className="scope-select"><span>签出日期</span><select value={dateRange} onChange={(event) => setDateRange(event.target.value as DateRangeKey)}>{DATE_RANGE_META.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        <label className="scope-select"><span>团队</span><select value={team} onChange={(event) => { setTeam(event.target.value as TeamKey); setSelected([]); }}>{(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}</select></label>
+        <label className="scope-select warehouse-select"><span>发货仓</span><select value={warehouse} onChange={(event) => { setWarehouse(event.target.value as WarehouseKey); setCEndCarrier("all"); setSelected([]); }}>{(Object.entries(WAREHOUSE_META) as [WarehouseKey, typeof WAREHOUSE_META[WarehouseKey]][]).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}</select></label>
+        <button className={`scope-more-button ${showMoreFilters ? "active" : ""}`} onClick={() => setShowMoreFilters((value) => !value)} aria-expanded={showMoreFilters}><SlidersHorizontal size={18} />更多筛选</button>
+        <button className="scope-query-button" onClick={() => notify(`已按${teamStats.label}、${WAREHOUSE_META[warehouse].label}、${rangeLabel}查询`)}><Search size={18} />查询</button>
         {dateRange === "custom" && <div className="scope-custom-date"><span>自定义签出日期</span><input type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} aria-label="开始日期" /><i>至</i><input type="date" value={customEnd} min={customStart} onChange={(event) => setCustomEnd(event.target.value)} aria-label="结束日期" /></div>}
+        {showMoreFilters && <div className="scope-more-filters" aria-label="更多筛选条件">
+          <label><span>销售平台</span><select value={platform} onChange={(event) => setPlatform(event.target.value)}><option value="all">全部平台</option><option>Shopify</option><option>Amazon</option><option>TikTok Shop</option></select></label>
+          <label><span>当前履约节点</span><select value={nodeFilter} onChange={(event) => setNodeFilter(event.target.value)}><option value="all">全部节点</option><option>等待仓库签出</option><option>等待承运商揽收</option><option>海关处理中</option><option>末端派送处理</option><option>已签收</option></select></label>
+          <label><span>数据同步</span><select value={syncFilter} onChange={(event) => setSyncFilter(event.target.value as SyncStatus | "all")}><option value="all">全部同步状态</option><option value="success">同步正常</option><option value="failure">同步失败</option><option value="stopped">停止跟踪</option></select></label>
+          <label><span>监控生命周期</span><select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)}><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select></label>
+        </div>}
       </section>
 
-      <section className="monitor-command" aria-label="监控数据摘要">
+      <section className="monitor-compact-bar" aria-label="监控视图切换">
         <div className="monitor-switch"><button className={mode === "alerts" ? "active" : ""} onClick={() => { setMode("alerts"); setLifecycle("all"); setSelected([]); }}><AlertTriangle size={16} />当前预警 <b>{scopedStats.alerts}</b></button><button className={mode === "all" ? "active" : ""} onClick={() => { setMode("all"); setActiveAlert("all"); if (ruleFilter === "fulfillment_error" || ruleFilter === "stock_shortage" || ruleFilter === "split_order_exception" || ruleFilter === "signout_timeout") setRuleFilter("all"); setSelected([]); }}><PackageSearch size={16} />全部运单 <b>{scopedStats.monitored.toLocaleString()}</b></button></div>
-        <div className="monitor-kpis"><div><span>监控履约单</span><strong>{scopedStats.monitored.toLocaleString()}</strong></div><div><span>异常履约单</span><strong>{abnormalOrderCount.toLocaleString()}</strong></div><div><span>活跃预警记录</span><strong>{scopedStats.alerts.toLocaleString()}</strong><small>同一履约单可命中多条</small></div></div>
-      </section>
-
-      <section className="monitor-layer-tabs" aria-label="监控视图切换">
-        <button className={monitorLayer === "business" ? "active" : ""} onClick={() => { setMonitorLayer("business"); setStatus("all"); setSubStatus("all"); }}><Radar size={17} /><span><strong>业务预警</strong><small>按规则发现需要处理的履约单</small></span><b>{scopedStats.alerts}</b></button>
-        <button className={monitorLayer === "track" ? "active" : ""} onClick={() => { setMonitorLayer("track"); setActiveAlert("all"); setRuleFilter("all"); }}><PackageSearch size={17} /><span><strong>17TRACK状态</strong><small>查看官方主状态与30个子状态</small></span><b>{scopedStats.monitored.toLocaleString()}</b></button>
+        <div className="monitor-view-tabs">
+          <button className={monitorLayer === "business" ? "active" : ""} onClick={() => { setMonitorLayer("business"); setStatus("all"); setSubStatus("all"); }}><Radar size={16} />业务预警 <b>{scopedStats.alerts}</b></button>
+          <button className={monitorLayer === "track" ? "active" : ""} onClick={() => { setMonitorLayer("track"); setActiveAlert("all"); setRuleFilter("all"); }}><PackageSearch size={16} />17TRACK状态 <b>{scopedStats.monitored.toLocaleString()}</b></button>
+        </div>
       </section>
 
       {monitorLayer === "track" && <><section className="status-grid compact-status">
@@ -1417,9 +1418,6 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       {monitorLayer === "business" && isPreTrackAlert && <section className="pretrack-source-note"><span><Database size={17} /></span><div><strong>ERP履约准备预警</strong><p>发生在物流单号注册17TRACK之前；生成物流单号后自动进入轨迹监控。</p></div><b>数据源：ERP错误中心</b></section>}
 
       {monitorLayer === "business" && mode === "alerts" && <section className="alert-overview" aria-label="业务预警分类">
-        <button className={`alert-total-card ${activeAlert === "all" ? "active" : ""}`} onClick={() => selectAlert("all")}>
-          <span className="alert-icon all"><Radar size={18} /></span><div><small>全部预警</small><strong>{scopedStats.alerts}</strong><em>订单 + 仓库异常、物流异常 · 共12条规则</em></div>
-        </button>
         <div className="alert-groups">
           {ALERT_GROUPS.map((group) => {
             const groupCount = group.alerts.reduce((total, alert) => total + ALERT_META[alert].count, 0);
@@ -1448,15 +1446,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <select value={cEndCarrier} disabled={isPreTrackAlert} onChange={(event) => setCEndCarrier(event.target.value)} aria-label="C端物流渠道"><option value="all">{isPreTrackAlert ? "生成运单后筛选C端渠道" : "全部C端渠道"}</option>{availableCEndCarriers.map((item) => <option key={item} value={item}>{item}</option>)}</select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
           <select value={priority} onChange={(event) => setPriority(event.target.value as PriorityFilter)} aria-label="预警优先级"><option value="all">全部优先级</option><option value="critical">紧急</option><option value="high">高</option><option value="medium">中</option></select>
-          <button className={`filter-button ${showMoreFilters ? "active" : ""}`} onClick={() => setShowMoreFilters((value) => !value)} aria-expanded={showMoreFilters}><SlidersHorizontal size={15} />更多筛选</button>
           <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "全部预警"}共 ${selectedRuleMeta ? filteredAlertCount(selectedRuleMeta.count) : activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : selectedRuleMeta ? `${selectedRuleMeta.label} · 当前与历史命中` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
-        {showMoreFilters && <div className="more-filters" aria-label="更多筛选条件">
-          <label><span>销售平台</span><select value={platform} onChange={(event) => setPlatform(event.target.value)}><option value="all">全部平台</option><option>Shopify</option><option>Amazon</option><option>TikTok Shop</option></select></label>
-          <label><span>当前履约节点</span><select value={nodeFilter} onChange={(event) => setNodeFilter(event.target.value)}><option value="all">全部节点</option><option>等待仓库签出</option><option>等待承运商揽收</option><option>海关处理中</option><option>末端派送处理</option><option>已签收</option></select></label>
-          <label><span>数据同步</span><select value={syncFilter} onChange={(event) => setSyncFilter(event.target.value as SyncStatus | "all")}><option value="all">全部同步状态</option><option value="success">同步正常</option><option value="failure">同步失败</option><option value="stopped">停止跟踪</option></select></label>
-          <label><span>监控生命周期</span><select value={lifecycle} onChange={(event) => setLifecycle(event.target.value as LifecycleFilter)}><option value="all">全部监控状态</option><option value="active">预警中</option><option value="recovered">已恢复</option><option value="normal">监控正常</option><option value="archived">已归档</option></select></label>
-        </div>}
         <div className="rule-note"><ShieldCheck size={14} /><span>{monitorLayer === "track" ? <>17TRACK主状态用于判断当前运输阶段，子状态解释具体节点原因；业务预警不会覆盖官方状态。</> : isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : ruleFilter !== "all" ? <>具体规则查询命中事实；“当前预警”查当前命中，“全部运单”同时包含历史命中和最终已签收结果。</> : mode === "alerts" ? <>预警按“订单 + 仓库异常”和“物流异常”分组；运输超时、物流断更、物流停滞、海关卡关分别独立筛选。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；业务预警筛选可查询具体规则。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
         {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selectedRule={ruleFilter} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
