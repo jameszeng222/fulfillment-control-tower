@@ -62,7 +62,7 @@ type AlertKey =
   | "fulfillment_error"
   | "stock_shortage"
   | "split_order_exception";
-type AlertFilterKey = AlertKey | "transit_exception" | "fulfillment_preparation";
+type AlertFilterKey = AlertKey;
 type Severity = "critical" | "high" | "medium";
 type MonitorState = "active" | "recovered" | "normal" | "archived";
 type SyncStatus = "success" | "failure" | "stopped";
@@ -181,13 +181,27 @@ const ALERT_META: Record<Exclude<AlertKey, "all">, { label: string; count: numbe
   split_order_exception: { label: "拆单异常", count: 3, hint: "订单分配物流渠道失败" },
 };
 
-const ALERT_FILTER_META: { key: Exclude<AlertFilterKey, "all">; label: string; count: number; hint: string }[] = [
-  { key: "fulfillment_preparation", label: "履约准备异常", count: 17, hint: "ERP · 报错 / 未签出" },
-  { key: "not_online", label: "未上网异常", count: 12, hint: "签出后无有效首扫" },
-  { key: "transit_exception", label: "运输异常", count: 82, hint: "延误 / 超时 / 断更 / 停滞 / 卡关" },
-  { key: "delivery_failure", label: "派送异常", count: 14, hint: "失败 / 地址 / 自提 / 拒收" },
-  { key: "returning", label: "包裹退运", count: 8, hint: "退运中 / 已退回" },
-  { key: "carrier_exception", label: "其他异常", count: 3, hint: "未命中明确规则的异常" },
+const ORDER_WAREHOUSE_ALERT_KEYS: Exclude<AlertKey, "all">[] = [
+  "fulfillment_error",
+  "stock_shortage",
+  "split_order_exception",
+  "signout_timeout",
+];
+
+const LOGISTICS_ALERT_KEYS: Exclude<AlertKey, "all">[] = [
+  "not_online",
+  "transport_timeout",
+  "no_update",
+  "stagnation",
+  "customs_hold",
+  "delivery_failure",
+  "returning",
+  "carrier_exception",
+];
+
+const ALERT_GROUPS: { key: "order_warehouse" | "logistics"; label: string; hint: string; alerts: Exclude<AlertKey, "all">[] }[] = [
+  { key: "order_warehouse", label: "订单 + 仓库异常", hint: "ERP建单、库存、渠道分配与仓库签出", alerts: ORDER_WAREHOUSE_ALERT_KEYS },
+  { key: "logistics", label: "物流异常", hint: "从上网、运输、清关到末端派送", alerts: LOGISTICS_ALERT_KEYS },
 ];
 
 const BUSINESS_ALERT_RULE_OPTIONS: Exclude<AlertKey, "all">[] = [
@@ -205,26 +219,9 @@ const BUSINESS_ALERT_RULE_OPTIONS: Exclude<AlertKey, "all">[] = [
   "carrier_exception",
 ];
 
-const RULE_TO_CATEGORY: Record<Exclude<AlertKey, "all">, Exclude<AlertFilterKey, "all">> = {
-  fulfillment_error: "fulfillment_preparation",
-  stock_shortage: "fulfillment_preparation",
-  split_order_exception: "fulfillment_preparation",
-  signout_timeout: "fulfillment_preparation",
-  not_online: "not_online",
-  transport_timeout: "transit_exception",
-  no_update: "transit_exception",
-  stagnation: "transit_exception",
-  customs_hold: "transit_exception",
-  delivery_failure: "delivery_failure",
-  returning: "returning",
-  carrier_exception: "carrier_exception",
-};
-
 const ALERT_FOCUS_STATUS: Record<AlertFilterKey, MainStatus> = {
   all: "InTransit",
-  fulfillment_preparation: "InfoReceived",
   transport_timeout: "InTransit",
-  transit_exception: "InTransit",
   stagnation: "InTransit",
   customs_hold: "InTransit",
   no_update: "InTransit",
@@ -1189,7 +1186,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
         <article><div><span>7天达成率</span><Gauge size={18} /></div><strong>93.7%</strong><small><b>↑ 1.8%</b> 较上周期</small></article>
       </section>
       <section className="overview-runline"><span className="live-dot" /><div><strong>轨迹监控运行正常</strong><small>ERP 11:43 · 17TRACK 11:45 · 每5分钟扫描</small></div><span>今日新增预警 <b>26</b></span><span>今日恢复 <b className="positive">21</b></span><span>同步失败 <b>23</b></span></section>
-      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>6个一级分类由10条规则计算，不覆盖官方状态</small></p><b>136条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
+      <section className="layer-banner"><div><span className="layer-icon fact"><PackageSearch size={15} /></span><p><strong>物流事实层</strong><small>17TRACK主状态定阶段、子状态解释原因，代码原样保留</small></p><b>4,704单</b></div><ChevronRight size={15} /><div><span className="layer-icon rule"><Radar size={15} /></span><p><strong>业务判断层</strong><small>订单 + 仓库、物流两组预警由12条规则计算</small></p><b>136条活跃预警</b></div><ChevronRight size={15} /><div><span className="layer-icon health"><Activity size={15} /></span><p><strong>数据健康层</strong><small>同步失败保留上次成功状态，并暂停时间类判断</small></p><b>32条需关注</b></div></section>
       <section className="overview-main">
         <article className="panel channel-share"><div className="panel-title"><div><h2>物流渠道占比</h2><p>有效监控运单 · 按当前渠道统计</p></div><button onClick={toAnalysis}>渠道分析<ChevronRight size={13} /></button></div><div className="donut-area"><div className="donut"><div><strong>4,704</strong><span>有效运单</span></div></div><div className="share-list">{channels.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.count.toLocaleString()}</b><em>{item.share}%</em></div>)}</div></div></article>
         <article className="panel volume-trend"><div className="panel-title"><div><h2>每日签出运单趋势</h2><p>最近14天 · ERP签出时间</p></div><span>日均 295单</span></div><div className="volume-bars">{daily.map((value, index) => <div key={index}><b>{index === daily.length - 1 ? value : ""}</b><i style={{ height: `${Math.round(value / 4.4)}%` }} /><small>{index % 2 === 0 ? `${index + 1}日` : ""}</small></div>)}</div><div className="trend-summary"><span><i />签出运单</span><strong>峰值 392单 · 近7日 +6.8%</strong></div></article>
@@ -1222,7 +1219,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [selected, setSelected] = useState<string[]>([]);
   const [archivedIds, setArchivedIds] = useState<string[]>([]);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
-  const isPreTrackAlert = activeAlert === "fulfillment_preparation";
+  const isPreTrackAlert = activeAlert !== "all" && ORDER_WAREHOUSE_ALERT_KEYS.includes(activeAlert);
 
   const dateWindow = useMemo(() => {
     const demoEnd = new Date("2026-08-13T23:59:59");
@@ -1238,9 +1235,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const rows = useMemo(() => ORDERS.map((order) => archivedIds.includes(order.trackingNo) ? { ...order, monitorState: "archived" as MonitorState } : order).filter((order) => {
     const text = `${order.fulfillmentNo} ${order.orderNo} ${order.trackingNo}`.toLowerCase();
     const alerts = activeAlerts(order);
-    const primaryAlert = alerts[0];
-    const primaryCategory = primaryAlert ? RULE_TO_CATEGORY[primaryAlert] : null;
-    const matchesAlert = activeAlert === "all" || primaryCategory === activeAlert;
+    const matchesAlert = activeAlert === "all" || alerts.includes(activeAlert);
     const hitState = ruleFilter === "all" ? null : ruleHitState(order, ruleFilter);
     const matchesRule = ruleFilter === "all" || (mode === "alerts" ? hitState === "current" : hitState !== null);
     return (team === "all" || order.team === team)
@@ -1256,12 +1251,12 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (!query || text.includes(query.toLowerCase()));
   }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, priority, query, ruleFilter, status, subStatus, team, warehouse]);
 
-  const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "fulfillment_preparation" || activeAlert === "all")
+  const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "all" || (isPreTrackAlert && item.kind === activeAlert))
     && (ruleFilter === "all" || item.kind === ruleFilter)
     && (team === "all" || item.team === team)
     && (warehouse === "all" || warehouseKeyOf(item.warehouse) === warehouse)
     && (priority === "all" || item.severity === priority)
-    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, priority, query, ruleFilter, team, warehouse]);
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, isPreTrackAlert, priority, query, ruleFilter, team, warehouse]);
 
   const teamStats = TEAM_META[team];
   const availableCEndCarriers = C_END_CARRIER_OPTIONS[warehouse];
@@ -1277,7 +1272,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const filteredAlertCount = (total: number) => Math.round(alertCount(total) * priorityFactor);
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
   const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
-  const activeFilterMeta = activeAlert === "all" ? null : ALERT_FILTER_META.find((item) => item.key === activeAlert);
+  const activeFilterMeta = activeAlert === "all" ? null : ALERT_META[activeAlert];
   const selectedRuleMeta = ruleFilter === "all" ? null : ALERT_META[ruleFilter];
 
   function selectAlert(nextAlert: AlertFilterKey) {
@@ -1290,8 +1285,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
   function selectRuleFilter(nextRule: AlertKey) {
     setRuleFilter(nextRule);
-    if (nextRule === "fulfillment_error" || nextRule === "stock_shortage" || nextRule === "split_order_exception" || nextRule === "signout_timeout") setActiveAlert("fulfillment_preparation");
-    else if (activeAlert === "fulfillment_preparation") setActiveAlert("all");
+    if (nextRule !== "all") setActiveAlert(nextRule);
     setStatus("all");
     setSubStatus("all");
     setSelected([]);
@@ -1367,18 +1361,26 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
       {isPreTrackAlert && <section className="pretrack-source-note"><span><Database size={16} /></span><div><strong>ERP履约准备预警</strong><p>发生在物流单号注册17TRACK之前，因此不关联17TRACK主状态和子状态；生成物流单号后才进入轨迹监控。</p></div><b>数据源：ERP错误中心</b></section>}
 
-      {mode === "alerts" && <section className="alert-cards" aria-label="一级业务预警分类">
-        <button className={activeAlert === "all" ? "active" : ""} onClick={() => selectAlert("all")}>
-          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{scopedStats.alerts}</strong><em>6类 · 按风险和时长排序</em></div>
+      {mode === "alerts" && <section className="alert-overview" aria-label="业务预警分类">
+        <button className={`alert-total-card ${activeAlert === "all" ? "active" : ""}`} onClick={() => selectAlert("all")}>
+          <span className="alert-icon all"><Radar size={17} /></span><div><small>全部预警</small><strong>{scopedStats.alerts}</strong><em>2组 · 12项具体规则</em></div>
         </button>
-        {ALERT_FILTER_META.map((item) => (
-          <button key={item.key} className={activeAlert === item.key ? "active" : ""} onClick={() => selectAlert(item.key)}>
-            <span className={`alert-icon ${item.key}`}><AlertTriangle size={16} /></span><div><small>{item.label}</small><strong>{alertCount(item.count)}</strong><em>{item.hint}</em></div>
-          </button>
-        ))}
+        <div className="alert-groups">
+          {ALERT_GROUPS.map((group) => {
+            const groupCount = group.alerts.reduce((total, alert) => total + ALERT_META[alert].count, 0);
+            return <section className={`alert-group ${group.key}`} key={group.key} aria-label={group.label}>
+              <header><div><span>{group.key === "order_warehouse" ? <Database size={16} /> : <Truck size={16} />}</span><p><strong>{group.label}</strong><small>{group.hint}</small></p></div><b>{filteredAlertCount(groupCount)}</b></header>
+              <div className="alert-cards">
+                {group.alerts.map((alert) => <button key={alert} className={activeAlert === alert ? "active" : ""} onClick={() => selectAlert(alert)}>
+                  <span className={`alert-icon ${alert}`}><AlertTriangle size={16} /></span><div><small>{ALERT_META[alert].label}</small><strong>{filteredAlertCount(ALERT_META[alert].count)}</strong><em>{ALERT_META[alert].hint}</em></div>
+                </button>)}
+              </div>
+            </section>;
+          })}
+        </div>
       </section>}
 
-      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入6个一级预警分类</small></section>}
+      {mode === "all" && <section className="special-watch"><span><History size={15} /></span><div><strong>特殊关注标签</strong><p>二次异常 3单 · 已重发 17单 · 已退款 9单</p></div><small>这些是处理结果和历史标签，不计入当前业务预警</small></section>}
 
       <section className="panel monitor-panel">
         <div className="panel-toolbar">
@@ -1396,7 +1398,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <button className="filter-button"><SlidersHorizontal size={14} />更多筛选</button>
           <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "全部预警"}共 ${selectedRuleMeta ? filteredAlertCount(selectedRuleMeta.count) : activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : selectedRuleMeta ? `${selectedRuleMeta.label} · 当前与历史命中` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : ruleFilter !== "all" ? <>具体规则查询命中事实，不改变一级分类；“当前预警”查当前命中，“全部运单”同时包含历史命中和最终已签收结果。</> : mode === "alerts" ? <>一级分类表示当前处理阶段；运输异常仅包含运输超时、物流断更、物流停滞和海关卡关，不改变派送异常与包裹退运的当前归类。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；业务预警筛选可查询具体规则。</>}</span></div>
+        <div className="rule-note"><ShieldCheck size={14} /><span>{isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : ruleFilter !== "all" ? <>具体规则查询命中事实；“当前预警”查当前命中，“全部运单”同时包含历史命中和最终已签收结果。</> : mode === "alerts" ? <>预警按“订单 + 仓库异常”和“物流异常”分组；运输超时、物流断更、物流停滞、海关卡关分别独立筛选。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；业务预警筛选可查询具体规则。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
         {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selectedRule={ruleFilter} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
         <div className="table-footer"><span>{isPreTrackAlert ? "ERP修复并重试成功后自动恢复 · 生成物流单号后进入17TRACK轨迹监控" : "业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中"}</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
@@ -1457,7 +1459,7 @@ function Settings({ onImport, notify }: { onImport: () => void; notify: (text: s
   const [tab, setTab] = useState<"business" | "data" | "sla" | "statuses">("business");
   return (
     <>
-      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("12条底层判断规则已发布，并汇总为6个一级分类")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
+      <PageHeader eyebrow="DATA & RULES" title="数据与规则" description="业务预警读取ERP与17TRACK事实，独立判断且不覆盖来源系统状态。" actions={tab === "business" ? <button className="button primary" onClick={() => notify("12条底层判断规则已发布，并按订单 + 仓库、物流两组展示")}><Check size={15} />保存并发布</button> : tab === "data" ? <button className="button primary" onClick={onImport}><Upload size={15} />重新导入</button> : tab === "sla" ? <button className="button primary" onClick={() => notify("SLA规则已保存")}><Check size={15} />保存规则</button> : <a className="button secondary" href="https://api.17track.net/zh-cn/doc?version=v2.4" target="_blank" rel="noreferrer">官方文档<ArrowUpRight size={13} /></a>} />
       <div className="settings-tabs"><button className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}><Radar size={15} />业务预警规则</button><button className={tab === "sla" ? "active" : ""} onClick={() => setTab("sla")}><SlidersHorizontal size={15} />渠道SLA规则</button><button className={tab === "statuses" ? "active" : ""} onClick={() => setTab("statuses")}><Layers3 size={15} />17TRACK状态字典</button><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><Database size={15} />导入数据质量</button></div>
       {tab === "business" ? <BusinessRules notify={notify} /> : tab === "data" ? <DataQuality onImport={onImport} /> : tab === "sla" ? <SlaRules /> : <StatusDictionary />}
     </>

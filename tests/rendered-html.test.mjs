@@ -39,14 +39,22 @@ test("核心监控范围和异常路由配置完整", async () => {
   const page = await readFile(new URL("app/page.tsx", root), "utf8");
 
   for (const category of [
-    "履约准备异常",
-    "未上网异常",
-    "运输异常",
+    "订单 + 仓库异常",
+    "物流异常",
+    "履约单报错",
+    "商品缺货",
+    "拆单异常",
+    "超时未签出",
+    "物流未上网",
+    "运输超时",
+    "物流断更",
+    "物流停滞",
+    "海关卡关",
     "派送异常",
     "包裹退运",
     "其他异常",
   ]) {
-    assert.match(page, new RegExp(category));
+    assert.ok(page.includes(category));
   }
 
   for (const team of ["LM", "FD", "LM_TT", "INFLUENCER"]) {
@@ -62,21 +70,17 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /DeliveryFailure_Rejected|Exception_Rejected/);
   assert.match(page, /reasonTag: "订单缺货"/);
   assert.match(page, /ERP_STOCK_INSUFFICIENT/);
-  assert.match(page, /stock_shortage: "fulfillment_preparation"/);
+  assert.match(page, /ORDER_WAREHOUSE_ALERT_KEYS/);
   assert.match(page, /label: "商品缺货"/);
-  assert.match(page, /split_order_exception: "fulfillment_preparation"/);
+  assert.match(page, /LOGISTICS_ALERT_KEYS/);
   assert.match(page, /label: "拆单异常"/);
   assert.match(page, /订单分配物流渠道失败/);
   assert.match(page, /ERP_LOGISTICS_CHANNEL_ASSIGN_FAILED/);
   assert.match(page, /12条底层判断规则/);
-  assert.match(page, /transport_timeout: "transit_exception"/);
-  assert.match(page, /no_update: "transit_exception"/);
-  assert.match(page, /stagnation: "transit_exception"/);
-  assert.match(page, /customs_hold: "transit_exception"/);
-  assert.match(page, /delivery_failure: "delivery_failure"/);
-  assert.match(page, /returning: "returning"/);
-  assert.match(page, /const primaryAlert = alerts\[0\]/);
-  assert.match(page, /primaryCategory === activeAlert/);
+  assert.match(page, /label: "订单 \+ 仓库异常"/);
+  assert.match(page, /label: "物流异常"/);
+  assert.match(page, /运输超时、物流断更、物流停滞、海关卡关分别独立筛选/);
+  assert.match(page, /alerts\.includes\(activeAlert\)/);
   assert.match(page, /function ruleHitState/);
   assert.match(page, /order\.alertHistory\?\.some/);
   assert.match(page, /order\.alertHistory\?\.length \? order\.alertHistory\.map/);
