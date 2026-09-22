@@ -1019,8 +1019,8 @@ function TrackStatusPair({ status, subStatus }: { status: MainStatus; subStatus:
   const subLabel = SUB_STATUS_LABELS[subStatus];
   return (
     <div className="track-status-pair">
-      <div><span>主状态</span><StatusBadge status={status} /><code>{status}</code></div>
-      <div><span>子状态</span><strong>{subLabel ?? "未映射 · 保留原值"}</strong><code>{subStatus}</code></div>
+      <div><span>主状态</span><StatusBadge status={status} /></div>
+      <div><span>子状态</span><strong>{subLabel ?? "未映射状态"}</strong></div>
     </div>
   );
 }
@@ -1156,11 +1156,8 @@ function OrderTable({ rows, selectedRule, selected, onToggle, onToggleAll, onOpe
             <th>履约单 / 订单</th>
             <th>运单号</th>
             <th>关键时间</th>
-            <th>17TRACK主 / 子状态</th>
+            <th>17TRACK状态</th>
             <th>渠道 / 国家</th>
-            <th>监控生命周期</th>
-            <th>最新物流轨迹</th>
-            <th>数据同步</th>
             <th />
           </tr>
         </thead>
@@ -1181,13 +1178,9 @@ function OrderTable({ rows, selectedRule, selected, onToggle, onToggleAll, onOpe
                 <div><dt>创建</dt><dd>{milestones.created}</dd></div>
                 <div><dt>出库</dt><dd>{milestones.outbound}</dd></div>
                 <div><dt>上网</dt><dd>{milestones.online}</dd></div>
-                <div><dt>派送</dt><dd>{milestones.delivery}</dd></div>
               </dl></td>
               <td><TrackStatusPair status={order.status} subStatus={order.subStatus} /></td>
               <td><strong>{order.channel}</strong><small>{order.country} · {order.warehouse}</small></td>
-              <td><MonitorBadge state={order.monitorState} /><small>{order.abnormalAge} · 运输 {order.elapsed}</small></td>
-              <td><strong className="track-copy">{order.latestTrack}</strong><small>{order.latestAt}</small></td>
-              <td><SyncBadge status={order.syncStatus} /><small>{order.syncAt}</small></td>
               <td><button className="icon-button" aria-label="查看物流详情"><ChevronRight size={17} /></button></td>
             </tr>
           ); })}
@@ -1422,10 +1415,10 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           {ALERT_GROUPS.map((group) => {
             const groupCount = group.alerts.reduce((total, alert) => total + ALERT_META[alert].count, 0);
             return <section className={`alert-group ${group.key}`} key={group.key} aria-label={group.label}>
-              <header><div><span>{group.key === "order_warehouse" ? <Database size={17} /> : <Truck size={17} />}</span><p><strong>{group.label}</strong><small>{group.hint}</small></p></div><b>{filteredAlertCount(groupCount)}</b></header>
+              <header><div><span>{group.key === "order_warehouse" ? <Database size={17} /> : <Truck size={17} />}</span><p><strong>{group.label}</strong></p></div><b>{filteredAlertCount(groupCount)}</b></header>
               <div className="alert-cards">
                 {group.alerts.map((alert) => <button key={alert} className={activeAlert === alert ? "active" : ""} onClick={() => selectAlert(alert)}>
-                  <span className={`alert-icon ${alert}`}><AlertTriangle size={17} /></span><div><small>{ALERT_META[alert].label}</small><strong>{filteredAlertCount(ALERT_META[alert].count)}</strong><em>{ALERT_META[alert].hint}</em></div>
+                  <span className={`alert-icon ${alert}`}><AlertTriangle size={17} /></span><div><small>{ALERT_META[alert].label}</small><strong>{filteredAlertCount(ALERT_META[alert].count)}</strong></div>
                 </button>)}
               </div>
             </section>;

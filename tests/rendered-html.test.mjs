@@ -92,8 +92,12 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /aria-label="业务预警"/);
   assert.match(page, /aria-label="监控范围筛选"/);
   assert.match(page, /<th>关键时间<\/th>/);
-  for (const milestone of ["支付", "创建", "出库", "上网", "派送"]) {
+  for (const milestone of ["支付", "创建", "出库", "上网"]) {
     assert.match(page, new RegExp(`<dt>${milestone}<\\/dt>`));
+  }
+  assert.doesNotMatch(page, /<dt>派送<\/dt>/);
+  for (const removedColumn of ["监控生命周期", "最新物流轨迹", "数据同步"]) {
+    assert.doesNotMatch(page, new RegExp(`<th>${removedColumn}<\\/th>`));
   }
   assert.match(page, /function getOrderMilestones/);
   assert.match(page, /monitorLayer.*business.*track/);
