@@ -79,7 +79,7 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /12条底层判断规则/);
   assert.match(page, /label: "订单 \+ 仓库异常"/);
   assert.match(page, /label: "物流异常"/);
-  assert.match(page, /运输超时、物流断更、物流停滞、海关卡关分别独立筛选/);
+  assert.doesNotMatch(page, /运输超时、物流断更、物流停滞、海关卡关分别独立筛选/);
   assert.match(page, /alerts\.includes\(activeAlert\)/);
   assert.match(page, /function ruleHitState/);
   assert.match(page, /order\.alertHistory\?\.some/);
@@ -91,6 +91,8 @@ test("核心监控范围和异常路由配置完整", async () => {
   assert.match(page, /全部业务预警/);
   assert.match(page, /aria-label="业务预警"/);
   assert.match(page, /aria-label="监控范围筛选"/);
+  assert.doesNotMatch(page, /eyebrow="LOGISTICS WATCH"/);
+  assert.doesNotMatch(page, /aria-label="预警优先级"/);
   assert.match(page, /<th>关键时间<\/th>/);
   for (const milestone of ["支付", "创建", "出库", "上网"]) {
     assert.match(page, new RegExp(`<dt>${milestone}<\\/dt>`));
@@ -127,5 +129,6 @@ test("项目元信息不再包含脚手架占位内容", async () => {
   assert.match(layout, /readability\.css/);
   assert.match(readability, /\.data-table td\{[^}]*font-size:14px/);
   assert.match(readability, /\.page-header p\{[^}]*font-size:15px/);
+  assert.match(readability, /\.alert-groups\{grid-template-columns:1fr\}/);
   assert.doesNotMatch(`${packageJson}\n${readme}`, /site-creator-vinext-starter/);
 });

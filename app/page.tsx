@@ -24,7 +24,6 @@ import {
   PackageCheck,
   PackageSearch,
   Radar,
-  RefreshCw,
   Search,
   Settings2,
   ShieldCheck,
@@ -70,7 +69,6 @@ type TeamKey = "all" | "LM" | "FD" | "LM_TT" | "INFLUENCER";
 type WarehouseKey = "all" | "winit" | "domestic";
 type DateRangeKey = "3d" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 type LifecycleFilter = "all" | MonitorState;
-type PriorityFilter = "all" | Severity;
 
 type BusinessRule = {
   key: Exclude<AlertKey, "all">;
@@ -1248,7 +1246,7 @@ function Overview({ toMonitor, toAnalysis }: { toMonitor: () => void; toAnalysis
   );
 }
 
-function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void; onImport: () => void; notify: (text: string) => void }) {
+function Monitor({ onOpen, notify }: { onOpen: (order: Order) => void; notify: (text: string) => void }) {
   const [team, setTeam] = useState<TeamKey>("all");
   const [warehouse, setWarehouse] = useState<WarehouseKey>("all");
   const [cEndCarrier, setCEndCarrier] = useState("all");
@@ -1260,7 +1258,6 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const [subStatus, setSubStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("全部国家");
-  const [priority, setPriority] = useState<PriorityFilter>("all");
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("all");
   const [platform, setPlatform] = useState("all");
   const [syncFilter, setSyncFilter] = useState<SyncStatus | "all">("all");
@@ -1298,21 +1295,19 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
       && (status === "all" || order.status === status)
       && (subStatus === "all" || order.subStatus === subStatus)
       && (country === "全部国家" || order.country === country)
-      && (priority === "all" || order.severity === priority)
       && (lifecycle === "all" || order.monitorState === lifecycle)
       && (platform === "all" || order.platform === platform)
       && (syncFilter === "all" || order.syncStatus === syncFilter)
       && (nodeFilter === "all" || getCurrentNode(order) === nodeFilter)
       && (() => { const shipped = new Date(order.shippedAt.replace(" ", "T")); return shipped >= dateWindow.start && shipped <= dateWindow.end; })()
       && (!query || text.includes(query.toLowerCase()));
-  }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, nodeFilter, platform, priority, query, ruleFilter, status, subStatus, syncFilter, team, warehouse]);
+  }), [activeAlert, archivedIds, cEndCarrier, country, dateWindow, lifecycle, mode, nodeFilter, platform, query, ruleFilter, status, subStatus, syncFilter, team, warehouse]);
 
   const erpRows = useMemo(() => ERP_PRETRACK_ALERTS.filter((item) => (activeAlert === "all" || (isPreTrackAlert && item.kind === activeAlert))
     && (ruleFilter === "all" || item.kind === ruleFilter)
     && (team === "all" || item.team === team)
     && (warehouse === "all" || warehouseKeyOf(item.warehouse) === warehouse)
-    && (priority === "all" || item.severity === priority)
-    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, isPreTrackAlert, priority, query, ruleFilter, team, warehouse]);
+    && (!query || `${item.orderNo} ${item.fulfillmentNo ?? ""} ${item.errorCode} ${item.reason}`.toLowerCase().includes(query.toLowerCase()))), [activeAlert, isPreTrackAlert, query, ruleFilter, team, warehouse]);
 
   const teamStats = TEAM_META[team];
   const availableCEndCarriers = C_END_CARRIER_OPTIONS[warehouse];
@@ -1323,8 +1318,7 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
   const scopedStats = { monitored: scale(teamStats.monitored), alerts: scale(teamStats.alerts), todayNew: scale(teamStats.todayNew), recovered: scale(teamStats.recovered) };
   const statusCount = (total: number) => scale(team === "all" ? total : total * teamStats.monitored / TEAM_META.all.monitored);
   const alertCount = (total: number) => scale(team === "all" ? total : total * teamStats.alerts / TEAM_META.all.alerts);
-  const priorityFactor = priority === "critical" ? 0.24 : priority === "high" ? 0.58 : priority === "medium" ? 0.18 : 1;
-  const filteredAlertCount = (total: number) => Math.round(alertCount(total) * priorityFactor);
+  const filteredAlertCount = (total: number) => alertCount(total);
   const rangeLabel = dateRange === "custom" ? `${customStart} 至 ${customEnd}` : DATE_RANGE_META.find((item) => item.key === dateRange)?.label;
   const expandedStatus: MainStatus = status === "all" ? ALERT_FOCUS_STATUS[activeAlert] : status;
   const activeFilterMeta = activeAlert === "all" ? null : ALERT_META[activeAlert];
@@ -1368,13 +1362,6 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
 
   return (
     <>
-      <PageHeader
-        eyebrow="LOGISTICS WATCH"
-        title="物流轨迹监控"
-        description="按团队统一监控ERP履约准备异常、17TRACK官方状态、业务预警和完整物流轨迹。"
-        actions={<><button className="button secondary" onClick={onImport}><Upload size={15} />导入履约单</button><button className="button primary" onClick={() => notify("轨迹已刷新，新增2条状态变化")}><RefreshCw size={15} />更新轨迹</button></>}
-      />
-
       <section className="monitor-scope" aria-label="监控范围筛选">
         <label className="scope-select"><span>签出日期</span><select value={dateRange} onChange={(event) => setDateRange(event.target.value as DateRangeKey)}>{DATE_RANGE_META.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
         <label className="scope-select"><span>团队</span><select value={team} onChange={(event) => { setTeam(event.target.value as TeamKey); setSelected([]); }}>{(Object.entries(TEAM_META) as [TeamKey, typeof TEAM_META[TeamKey]][]).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}</select></label>
@@ -1438,10 +1425,8 @@ function Monitor({ onOpen, onImport, notify }: { onOpen: (order: Order) => void;
           <select aria-label="物流渠道"><option>全部渠道</option><option>WYT-USPS GA</option><option>WYT-WF5日达 Zonal</option><option>云途英国专线</option></select>
           <select value={cEndCarrier} disabled={isPreTrackAlert} onChange={(event) => setCEndCarrier(event.target.value)} aria-label="C端物流渠道"><option value="all">{isPreTrackAlert ? "生成运单后筛选C端渠道" : "全部C端渠道"}</option>{availableCEndCarriers.map((item) => <option key={item} value={item}>{item}</option>)}</select>
           <select value={country} onChange={(event) => setCountry(event.target.value)} aria-label="目的国家"><option>全部国家</option><option>US</option><option>GB</option></select>
-          <select value={priority} onChange={(event) => setPriority(event.target.value as PriorityFilter)} aria-label="预警优先级"><option value="all">全部优先级</option><option value="critical">紧急</option><option value="high">高</option><option value="medium">中</option></select>
-          <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "全部预警"}共 ${selectedRuleMeta ? filteredAlertCount(selectedRuleMeta.count) : activeAlert === "all" ? Math.round(scopedStats.alerts * priorityFactor) : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : selectedRuleMeta ? `${selectedRuleMeta.label} · 当前与历史命中` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
+          <span className="result-count">{teamStats.label} · {WAREHOUSE_META[warehouse].label} · {rangeLabel} · 显示 {isPreTrackAlert ? erpRows.length : rows.length} 条示例 · {mode === "alerts" ? `${selectedRuleMeta?.label ?? activeFilterMeta?.label ?? "全部预警"}共 ${selectedRuleMeta ? filteredAlertCount(selectedRuleMeta.count) : activeAlert === "all" ? scopedStats.alerts : filteredAlertCount(activeFilterMeta?.count ?? 0)} 条` : selectedRuleMeta ? `${selectedRuleMeta.label} · 当前与历史命中` : `有效运单共 ${scopedStats.monitored.toLocaleString()} 条`}</span>
         </div>
-        <div className="rule-note"><ShieldCheck size={14} /><span>{monitorLayer === "track" ? <>17TRACK主状态用于判断当前运输阶段，子状态解释具体节点原因；业务预警不会覆盖官方状态。</> : isPreTrackAlert ? <>ERP预警以订单号为跟踪键；履约单或物流单号生成后，系统自动关联并进入17TRACK轨迹监控。</> : ruleFilter !== "all" ? <>具体规则查询命中事实；“当前预警”查当前命中，“全部运单”同时包含历史命中和最终已签收结果。</> : mode === "alerts" ? <>预警按“订单 + 仓库异常”和“物流异常”分组；运输超时、物流断更、物流停滞、海关卡关分别独立筛选。</> : <>17TRACK主/子状态、业务预警、生命周期、业务标签和同步健康分别保存；业务预警筛选可查询具体规则。</>}</span></div>
         {!isPreTrackAlert && selected.length > 0 && <div className="selection-bar"><div><strong>已选择 {selected.length} 条运单</strong><span>归档只结束业务预警监控，不删除17TRACK官方状态和历史轨迹。</span></div><button onClick={() => setSelected([])}>取消选择</button><button className="archive-action" onClick={() => setShowArchiveConfirm(true)}><Archive size={14} />手动归档</button></div>}
         {isPreTrackAlert ? <ErpAlertTable rows={erpRows} notify={notify} /> : <OrderTable rows={rows} selectedRule={ruleFilter} selected={selected} onToggle={toggleRow} onToggleAll={toggleAllRows} onOpen={onOpen} />}
         <div className="table-footer"><span>{isPreTrackAlert ? "ERP修复并重试成功后自动恢复 · 生成物流单号后进入17TRACK轨迹监控" : "业务预警可手动归档 · 17TRACK状态与完整轨迹始终保留在历史运单中"}</span><div><button className="active">1</button><button>2</button><button>3</button><button>下一页</button></div></div>
@@ -1667,7 +1652,7 @@ export default function Home() {
         <header className="topbar"><div><strong>履约控制台</strong><ChevronRight size={13} /><span>{NAV.find((item) => item.id === view)?.label}</span></div><div><button><CalendarDays size={14} />近30天<ChevronDown size={13} /></button><button><CircleCheck size={14} />数据更新于 11:45</button></div></header>
         <div className="content">
           {view === "overview" && <Overview toMonitor={() => changeView("monitor")} toAnalysis={() => changeView("analysis")} />}
-          {view === "monitor" && <Monitor onOpen={setSelectedOrder} onImport={() => setShowImport(true)} notify={notify} />}
+          {view === "monitor" && <Monitor onOpen={setSelectedOrder} notify={notify} />}
           {view === "analysis" && <Analysis />}
           {view === "settings" && <Settings onImport={() => setShowImport(true)} notify={notify} />}
         </div>
